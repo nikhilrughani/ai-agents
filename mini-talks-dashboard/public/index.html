@@ -14,7 +14,7 @@
       --border:      #2a2d3a;
       --text:        #e8eaf0;
       --muted:       #7a7f96;
-      --accent:      #6c63ff;
+      --accent:      #4bb8d0;
 
       --c-outreach:  #4f8ef7;
       --c-briefbook: #a78bfa;
@@ -48,7 +48,9 @@
       display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
     }
     .header-left { display: flex; align-items: center; gap: 12px; }
-    .title  { font-size: 1.2rem; font-weight: 700; }
+    .nr-logo { font-size: 1.5rem; font-weight: 900; letter-spacing: -0.04em; color: #e8eaf0; line-height: 1; }
+    .nr-logo .nr-dot { color: #4bb8d0; }
+    .title  { font-size: 1.1rem; font-weight: 700; }
     .subtitle { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
     .header-right { display: flex; align-items: center; gap: 10px; }
 
@@ -413,10 +415,10 @@
 <header>
   <div class="header-inner">
     <div class="header-left">
-      <span style="font-size:1.4rem">🎙️</span>
+      <div class="nr-logo">nr<span class="nr-dot">.</span></div>
       <div>
         <div class="title">Mini-Talks Pipeline</div>
-        <div class="subtitle">by <a href="https://nikhilrughani.com" target="_blank" style="color:var(--accent);text-decoration:none;font-weight:600">Nikhil Rughani</a> &nbsp;·&nbsp; Auto-refreshes every 60s</div>
+        <div class="subtitle">by <a href="https://nikhilrughani.com" target="_blank" style="color:#4bb8d0;text-decoration:none;font-weight:600">Nikhil Rughani</a> &nbsp;·&nbsp; Auto-refreshes every 60s</div>
       </div>
     </div>
     <div class="header-right">
