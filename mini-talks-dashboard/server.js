@@ -78,8 +78,8 @@ const STAGES = [
 function classifyGuest(page) {
   const now = new Date();
 
-  const briefingDate = getDate(page, "Briefing Date");
-  const interviewDate = getDate(page, "Interview Date");
+  const briefingDate = getDate(page, "Briefing");
+  const interviewDate = getDate(page, "Interview");
   const published = getCheckbox(page, "Published Mini-Talk to YouTube");
 
   // Stage 6: Published
@@ -129,11 +129,11 @@ function buildDashboard(pages) {
   let totalActive = 0;
 
   for (const page of pages) {
-    const name = getText(page, "Guest Name") || "Unnamed";
+    const name = getText(page, "Name") || "Unnamed";
     const stage = classifyGuest(page);
-    const briefingDate = getDate(page, "Briefing Date");
-    const interviewDate = getDate(page, "Interview Date");
-    const invitationDate = getDate(page, "Invitation Date");
+    const briefingDate = getDate(page, "Briefing");
+    const interviewDate = getDate(page, "Interview");
+    const invitationDate = getDate(page, "Invitation to briefing");
 
     stageCounts[stage]++;
     stageGuests[stage].push({
