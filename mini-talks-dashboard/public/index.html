@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini-Talks Pipeline</title>
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0e0f14;
+      --surface:      #16181f;
+      --surface2:     #1e2029;
+      --border:       #2a2d3a;
+      --text:         #e8eaf0;
+      --muted:        #7a7f96;
+      --accent:       #6c63ff;
+      --accent-glow:  rgba(108,99,255,0.18);
+
+      /* Stage colours */
+      --c-outreach:   #4f8ef7;
+      --c-briefbook:  #a78bfa;
+      --c-briefdone:  #fb923c;
+      --c-intbook:    #38bdf8;
+      --c-intdone:    #34d399;
+      --c-published:  #facc15;
+
+      --red:          #f87171;
+      --green:        #34d399;
+      --yellow:       #facc15;
+    }
+
+    html { font-size: 16px; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 0 0 60px;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────────── */
+    .shell { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .logo { font-size: 1.5rem; }
+    .title { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+    .subtitle { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .refresh-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .pulse {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.75); }
+    }
+
+    #last-updated { font-size: 0.75rem; color: var(--muted); }
+
+    /* ── Section headers ───────────────────────────────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 32px 0 16px;
+    }
+    .section-header h2 { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .section-header .line { flex: 1; height: 1px; background: var(--border); }
+
+    /* ── Health strip ──────────────────────────────────────────────────── */
+    .health-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin: 24px 0 0;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .stat-card .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+    .stat-card .value { font-size: 2rem; font-weight: 700; margin-top: 4px; line-height: 1; }
+    .stat-card .sub   { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+
+    /* health score colour */
+    .health-bar-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .health-bar-wrap .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
+    .bar-outer {
+      height: 10px;
+      background: var(--surface2);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .bar-inner {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.8s ease;
+      background: linear-gradient(90deg, #6c63ff, #34d399);
+    }
+    .bar-score { font-size: 1.8rem; font-weight: 700; margin-top: 8px; }
+
+    /* ── Pipeline funnel ───────────────────────────────────────────────── */
+    .pipeline-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+    }
+
+    .stage-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 18px;
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .stage-card:hover  { border-color: var(--stage-color); transform: translateY(-2px); }
+    .stage-card.active { border-color: var(--stage-color); background: var(--surface2); }
+
+    .stage-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--stage-color);
+      margin-bottom: 12px;
+      box-shadow: 0 0 8px var(--stage-color);
+    }
+    .stage-name { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .stage-count { font-size: 2.8rem; font-weight: 800; line-height: 1; margin-top: 4px; color: var(--stage-color); }
+    .stage-label { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+    .stage-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--stage-color);
+      opacity: 0.6;
+    }
+
+    /* ── Guest drawer ──────────────────────────────────────────────────── */
+    .drawer {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-top: 12px;
+      overflow: hidden;
+      transition: max-height 0.3s ease, opacity 0.3s ease;
+      max-height: 0;
+      opacity: 0;
+    }
+    .drawer.open { max-height: 600px; opacity: 1; overflow-y: auto; }
+
+    .drawer-header {
+      padding: 12px 18px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .guest-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 18px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    .guest-row:last-child { border-bottom: none; }
+    .guest-name { font-size: 0.88rem; font-weight: 500; }
+    .guest-meta { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .guest-chips { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .chip {
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .chip-green  { background: rgba(52,211,153,0.15); color: var(--green); }
+    .chip-yellow { background: rgba(250,204,21,0.15);  color: var(--yellow); }
+    .chip-red    { background: rgba(248,113,113,0.15); color: var(--red); }
+    .chip-blue   { background: rgba(79,142,247,0.15);  color: var(--c-outreach); }
+    .chip-muted  { background: var(--surface); color: var(--muted); }
+
+    .empty-drawer {
+      padding: 24px 18px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-align: center;
+    }
+
+    /* ── Overdue table ─────────────────────────────────────────────────── */
+    .overdue-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .overdue-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--red);
+      border-radius: 10px;
+      padding: 14px 18px;
+    }
+    .overdue-icon { font-size: 1.2rem; flex-shrink: 0; }
+    .overdue-name { font-size: 0.9rem; font-weight: 600; }
+    .overdue-reason { font-size: 0.77rem; color: var(--muted); margin-top: 2px; }
+    .overdue-days {
+      margin-left: auto;
+      flex-shrink: 0;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--red);
+      background: rgba(248,113,113,0.1);
+      padding: 3px 9px;
+      border-radius: 99px;
+    }
+    .no-overdue {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .no-overdue span { font-size: 1.5rem; display: block; margin-bottom: 6px; }
+
+    /* ── Error state ───────────────────────────────────────────────────── */
+    .error-banner {
+      background: rgba(248,113,113,0.1);
+      border: 1px solid rgba(248,113,113,0.3);
+      border-radius: 10px;
+      padding: 16px 20px;
+      color: var(--red);
+      margin: 20px 0;
+      font-size: 0.85rem;
+      display: none;
+    }
+
+    /* ── Loading skeleton ──────────────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 8px;
+    }
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      transition: opacity 0.4s;
+    }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .loader-text { color: var(--muted); font-size: 0.9rem; margin-top: 16px; text-align: center; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Progress bar (countdown) ──────────────────────────────────────── */
+    .countdown-bar {
+      position: fixed;
+      bottom: 0; left: 0;
+      height: 3px;
+      background: var(--accent);
+      transition: width 1s linear;
+      z-index: 200;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .pipeline-grid { grid-template-columns: repeat(2, 1fr); }
+      .health-row    { grid-template-columns: repeat(2, 1fr); }
+      .stage-count   { font-size: 2.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading">
+  <div style="display:flex;flex-direction:column;align-items:center;">
+    <div class="spinner"></div>
+    <p class="loader-text">Fetching your pipeline from Notion…</p>
+  </div>
+</div>
+
+<!-- Countdown bar -->
+<div class="countdown-bar" id="countdown-bar" style="width:100%"></div>
+
+<!-- Header -->
+<header>
+  <div class="header-inner">
+    <div class="header-left">
+      <span class="logo">🎙️</span>
+      <div>
+        <div class="title">Mini-Talks Pipeline</div>
+        <div class="subtitle">Live dashboard · Auto-refreshes every 60s</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="refresh-badge">
+        <div class="pulse"></div>
+        <span id="countdown-text">60s</span>
+      </div>
+      <div id="last-updated">—</div>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- Error banner -->
+  <div class="error-banner" id="error-banner"></div>
+
+  <!-- Health KPIs -->
+  <div class="section-header">
+    <h2>Pipeline Health</h2>
+    <div class="line"></div>
+  </div>
+  <div class="health-row" id="health-row">
+    <!-- injected by JS -->
+  </div>
+
+  <!-- Pipeline stages -->
+  <div class="section-header" style="margin-top:36px">
+    <h2>Stages</h2>
+    <div class="line"></div>
+  </div>
+  <div class="pipeline-grid" id="pipeline-grid">
+    <!-- injected by JS -->
+  </div>
+  <!-- Drawer for expanded stage -->
+  <div class="drawer" id="stage-drawer">
+    <div class="drawer-header" id="drawer-title"></div>
+    <div id="drawer-content"></div>
+  </div>
+
+  <!-- Overdue alerts -->
+  <div class="section-header" style="margin-top:36px">
+    <h2>⚠️ Needs Attention</h2>
+    <div class="line"></div>
+  </div>
+  <div class="overdue-list" id="overdue-list">
+    <!-- injected by JS -->
+  </div>
+
+</main>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────────────────
+  const REFRESH_INTERVAL = 60; // seconds
+
+  const STAGE_COLORS = {
+    "Outreach Sent":   "var(--c-outreach)",
+    "Briefing Booked": "var(--c-briefbook)",
+    "Briefing Done":   "var(--c-briefdone)",
+    "Interview Booked":"var(--c-intbook)",
+    "Interview Done":  "var(--c-intdone)",
+    "Published":       "var(--c-published)",
+  };
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let activeStage = null;
+  let data        = null;
+  let countdownSecs = REFRESH_INTERVAL;
+  let countdownTimer = null;
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function formatDate(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function relativeDay(iso) {
+    if (!iso) return "";
+    const diff = Math.round((Date.now() - new Date(iso).getTime()) / 86_400_000);
+    if (diff === 0)  return "today";
+    if (diff === 1)  return "yesterday";
+    if (diff === -1) return "tomorrow";
+    if (diff < 0)    return `in ${Math.abs(diff)}d`;
+    return `${diff}d ago`;
+  }
+
+  function healthColor(score) {
+    if (score >= 70) return "var(--green)";
+    if (score >= 40) return "var(--yellow)";
+    return "var(--red)";
+  }
+
+  // ── Render helpers ────────────────────────────────────────────────────────
+  function renderHealth(d) {
+    const el = document.getElementById("health-row");
+    el.innerHTML = `
+      <div class="health-bar-wrap">
+        <div class="label">Overall Health</div>
+        <div class="bar-outer"><div class="bar-inner" id="health-bar" style="width:0%"></div></div>
+        <div class="bar-score" style="color:${healthColor(d.healthScore)}">${d.healthScore}<span style="font-size:1rem;font-weight:400;color:var(--muted)">/100</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Guests</div>
+        <div class="value">${d.totalGuests}</div>
+        <div class="sub">${d.totalActive} active in pipeline</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">This Week</div>
+        <div class="value" style="color:var(--c-intdone)">${d.weeklyInterviews}</div>
+        <div class="sub">interview${d.weeklyInterviews !== 1 ? "s" : ""} completed · ${d.weeklyBriefings} briefing${d.weeklyBriefings !== 1 ? "s" : ""}</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Needs Attention</div>
+        <div class="value" style="color:${d.overdue.length > 0 ? "var(--red)" : "var(--green)"}">${d.overdue.length}</div>
+        <div class="sub">${d.overdue.length === 0 ? "All guests on track 🎉" : "follow-up overdue"}</div>
+      </div>
+    `;
+    // Animate bar after paint
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const bar = document.getElementById("health-bar");
+        if (bar) bar.style.width = d.healthScore + "%";
+      });
+    });
+  }
+
+  function renderPipeline(d) {
+    const grid = document.getElementById("pipeline-grid");
+    grid.innerHTML = d.stages.map(stage => {
+      const color = STAGE_COLORS[stage.name] || "#fff";
+      const isActive = activeStage === stage.name;
+      return `
+        <div class="stage-card ${isActive ? "active" : ""}"
+             style="--stage-color:${color}"
+             onclick="toggleDrawer('${stage.name}')">
+          <div class="stage-dot"></div>
+          <div class="stage-name">${stage.name}</div>
+          <div class="stage-count">${stage.count}</div>
+          <div class="stage-label">guest${stage.count !== 1 ? "s" : ""}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderDrawer(stageName) {
+    const stage = data.stages.find(s => s.name === stageName);
+    if (!stage) return;
+    const drawer  = document.getElementById("stage-drawer");
+    const title   = document.getElementById("drawer-title");
+    const content = document.getElementById("drawer-content");
+
+    title.textContent = `${stageName} · ${stage.count} guest${stage.count !== 1 ? "s" : ""}`;
+
+    if (stage.guests.length === 0) {
+      content.innerHTML = `<div class="empty-drawer">No guests at this stage</div>`;
+    } else {
+      content.innerHTML = stage.guests.map(g => {
+        const chips = [];
+        if (g.offerMade)      chips.push(`<span class="chip chip-green">Offer ✓</span>`);
+        if (g.assetsCreated)  chips.push(`<span class="chip chip-blue">Assets ✓</span>`);
+        if (g.assetsShared)   chips.push(`<span class="chip chip-blue">Shared ✓</span>`);
+        if (g.reels1)         chips.push(`<span class="chip chip-yellow">Reel 1 ✓</span>`);
+        if (g.reels2)         chips.push(`<span class="chip chip-yellow">Reel 2 ✓</span>`);
+        if (g.reels3)         chips.push(`<span class="chip chip-yellow">Reel 3 ✓</span>`);
+        if (g.published)      chips.push(`<span class="chip chip-green">Published ✓</span>`);
+
+        let meta = "";
+        if (g.briefingDate)  meta += `Briefing: ${formatDate(g.briefingDate)} <span style="opacity:.5">(${relativeDay(g.briefingDate)})</span>`;
+        if (g.interviewDate) meta += (meta ? " · " : "") + `Interview: ${formatDate(g.interviewDate)} <span style="opacity:.5">(${relativeDay(g.interviewDate)})</span>`;
+
+        return `
+          <div class="guest-row">
+            <div>
+              <div class="guest-name">${escHtml(g.name)}</div>
+              ${meta ? `<div class="guest-meta">${meta}</div>` : ""}
+            </div>
+            ${chips.length ? `<div class="guest-chips">${chips.join("")}</div>` : ""}
+          </div>
+        `;
+      }).join("");
+    }
+
+    drawer.classList.add("open");
+  }
+
+  function renderOverdue(d) {
+    const el = document.getElementById("overdue-list");
+    if (d.overdue.length === 0) {
+      el.innerHTML = `
+        <div class="no-overdue">
+          <span>✅</span>
+          No one needs follow-up right now — pipeline is flowing!
+        </div>`;
+      return;
+    }
+    el.innerHTML = d.overdue.map(o => `
+      <div class="overdue-card">
+        <div class="overdue-icon">⚠️</div>
+        <div>
+          <div class="overdue-name">${escHtml(o.name)}</div>
+          <div class="overdue-reason">${escHtml(o.reason)}</div>
+        </div>
+        <div class="overdue-days">${o.daysOverdue}d overdue</div>
+      </div>
+    `).join("");
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  // ── Toggle stage drawer ───────────────────────────────────────────────────
+  function toggleDrawer(stageName) {
+    const drawer = document.getElementById("stage-drawer");
+    if (activeStage === stageName) {
+      activeStage = null;
+      drawer.classList.remove("open");
+    } else {
+      activeStage = stageName;
+      renderDrawer(stageName);
+    }
+    // Re-render cards to update active state
+    renderPipeline(data);
+  }
+
+  // ── Fetch & render ────────────────────────────────────────────────────────
+  async function fetchDashboard() {
+    const errorEl = document.getElementById("error-banner");
+    try {
+      const res = await fetch("/api/dashboard");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+
+      errorEl.style.display = "none";
+      renderHealth(data);
+      renderPipeline(data);
+      renderOverdue(data);
+
+      // If a drawer is open, re-render it with fresh data
+      if (activeStage) renderDrawer(activeStage);
+
+      const ts = new Date(data.lastUpdated);
+      document.getElementById("last-updated").textContent =
+        "Updated " + ts.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    } catch (err) {
+      errorEl.style.display = "block";
+      errorEl.textContent = "⚠️  Could not reach Notion API — " + err.message + ". Retrying in 60s.";
+      console.error(err);
+    } finally {
+      document.getElementById("loading").classList.add("hidden");
+    }
+  }
+
+  // ── Countdown timer ────────────────────────────────────────────────────────
+  function startCountdown() {
+    countdownSecs = REFRESH_INTERVAL;
+    clearInterval(countdownTimer);
+
+    countdownTimer = setInterval(() => {
+      countdownSecs--;
+      document.getElementById("countdown-text").textContent = countdownSecs + "s";
+      const pct = (countdownSecs / REFRESH_INTERVAL) * 100;
+      document.getElementById("countdown-bar").style.width = pct + "%";
+
+      if (countdownSecs <= 0) {
+        fetchDashboard();
+        countdownSecs = REFRESH_INTERVAL;
+      }
+    }, 1000);
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  fetchDashboard().then(() => startCountdown());
+</script>
+</body>
+</html>
