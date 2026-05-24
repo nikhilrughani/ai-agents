@@ -60,6 +60,11 @@
       cursor: pointer; transition: opacity 0.15s;
     }
     .btn-add:hover { opacity: 0.85; }
+    .btn-settings {
+      background: none; border: 1px solid var(--border); border-radius: 8px;
+      padding: 7px 10px; font-size: 1rem; cursor: pointer; transition: border-color .15s; line-height:1;
+    }
+    .btn-settings:hover { border-color: var(--accent); }
 
     .refresh-badge {
       display: flex; align-items: center; gap: 6px;
@@ -416,6 +421,7 @@
     </div>
     <div class="header-right">
       <button class="btn-add" onclick="openAddModal()">＋ Add Guest</button>
+      <button class="btn-settings" onclick="window.location='/setup.html'" title="Settings">⚙️</button>
       <div class="refresh-badge">
         <div class="pulse"></div>
         <span id="countdown-text">60s</span>
@@ -454,6 +460,22 @@
 </main>
 
 <script>
+// ── Credentials ────────────────────────────────────────────────────────────
+function getCreds() { return JSON.parse(localStorage.getItem("miniTalksCreds") || "{}"); }
+
+function credHeaders(extra) {
+  const c = getCreds();
+  return Object.assign({
+    "Content-Type":   "application/json",
+    "x-data-source":  c.source      || "notion",
+    "x-notion-token": c.notionToken || "",
+    "x-notion-db-id": c.notionDbId  || "",
+    "x-sheets-url":   c.sheetsUrl   || "",
+  }, extra);
+}
+
+function isReadOnly() { return getCreds().source === "sheets"; }
+
 // ── Constants ──────────────────────────────────────────────────────────────
 const REFRESH_INTERVAL = 60;
 const STAGE_COLORS = {
@@ -664,7 +686,7 @@ async function toggleCheckbox(guestId, field, newValue) {
   try {
     const res = await fetch(`/api/guests/${guestId}`, {
       method:"PATCH",
-      headers:{"Content-Type":"application/json"},
+      headers: credHeaders(),
       body: JSON.stringify({ [field]: newValue }),
     });
     if (!res.ok) throw new Error((await res.json()).error);
@@ -846,7 +868,7 @@ async function saveGuest() {
   try {
     const url    = editingGuest ? `/api/guests/${editingGuest.id}` : "/api/guests";
     const method = editingGuest ? "PATCH" : "POST";
-    const res    = await fetch(url, { method, headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+    const res    = await fetch(url, { method, headers: credHeaders(), body:JSON.stringify(payload) });
     if (!res.ok) throw new Error((await res.json()).error || "Save failed");
 
     closeModal();
@@ -862,9 +884,22 @@ async function saveGuest() {
 
 // ── Fetch & render full dashboard ──────────────────────────────────────────
 async function fetchDashboard() {
+  // If no credentials saved, send to setup wizard
+  const c = getCreds();
+  if (!c.source && !c.notionToken && !c.sheetsUrl) {
+    const hasEnv = await fetch("/api/health").then(r=>r.ok).catch(()=>false);
+    // Only redirect if server has no env vars either — check via a probe
+    const probe = await fetch("/api/dashboard", { headers: credHeaders() });
+    if (!probe.ok) { window.location = "/setup.html"; return; }
+  }
+
+  // Hide Add Guest button for read-only sources
+  const addBtn = document.querySelector(".btn-add");
+  if (addBtn) addBtn.style.display = isReadOnly() ? "none" : "";
+
   const errEl = document.getElementById("error-banner");
   try {
-    const res = await fetch("/api/dashboard");
+    const res = await fetch("/api/dashboard", { headers: credHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
 
