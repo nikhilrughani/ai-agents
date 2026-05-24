@@ -135,6 +135,7 @@
     .guest-name { font-size:.88rem; font-weight:600; cursor:pointer; }
     .guest-name:hover { color: var(--accent); text-decoration: underline; }
     .guest-dates { font-size:.72rem; color:var(--muted); margin-top:3px; display:flex; gap:10px; flex-wrap:wrap; }
+    .guest-notes { font-size:.72rem; color:var(--muted); margin-top:4px; font-style:italic; opacity:.8; max-width:340px; white-space:pre-wrap; }
     .guest-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
 
     /* checkbox toggles */
@@ -237,12 +238,16 @@
     .field { display:flex; flex-direction:column; gap:6px; }
     .field label { font-size:.75rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
     .field input[type=text],
-    .field input[type=date] {
+    .field input[type=date],
+    .field textarea {
       background:var(--surface2); border:1px solid var(--border); border-radius:8px;
       padding:9px 12px; color:var(--text); font-size:.9rem;
       outline:none; transition:border-color .15s; width:100%;
+      font-family: inherit;
     }
-    .field input:focus { border-color:var(--accent); }
+    .field input:focus,
+    .field textarea:focus { border-color:var(--accent); }
+    .field textarea { resize:vertical; min-height:72px; line-height:1.5; }
     /* make date inputs readable */
     .field input[type=date]::-webkit-calendar-picker-indicator { filter:invert(1) opacity(.5); cursor:pointer; }
 
@@ -369,6 +374,12 @@
           <input type="date" id="f-interview" />
         </div>
         <div class="field"><!-- spacer --></div>
+      </div>
+
+      <!-- Notes -->
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="f-notes" rows="3" placeholder="Add any notes about this guest…"></textarea>
       </div>
 
       <!-- Checkboxes -->
@@ -584,6 +595,7 @@ function renderDrawer(stageName) {
           <div class="guest-left">
             <div class="guest-name" onclick="openEditModal('${g.id}')">${esc(g.name)}</div>
             ${dates.length ? `<div class="guest-dates">${dates.join(" · ")}</div>` : ""}
+            ${g.notes ? `<div class="guest-notes">${esc(g.notes)}</div>` : ""}
           </div>
           <div class="guest-right">
             <div class="cb-group">
@@ -739,6 +751,7 @@ function openEditModal(guestId) {
   document.getElementById("f-invitation").value = guest.invitationDate || "";
   document.getElementById("f-briefing").value   = guest.briefingDate   || "";
   document.getElementById("f-interview").value  = guest.interviewDate  || "";
+  document.getElementById("f-notes").value      = guest.notes || "";
   document.getElementById("f-offer").checked           = guest.offerMade;
   document.getElementById("f-assets-created").checked  = guest.assetsCreated;
   document.getElementById("f-assets-shared").checked   = guest.assetsShared;
@@ -791,7 +804,7 @@ function handleOverlayClick(e) {
 }
 
 function clearModalForm() {
-  ["f-name","f-source","f-invitation","f-briefing","f-interview"].forEach(id => {
+  ["f-name","f-source","f-invitation","f-briefing","f-interview","f-notes"].forEach(id => {
     document.getElementById(id).value = "";
   });
   ["f-offer","f-assets-created","f-assets-shared","f-published","f-reels1","f-reels2","f-reels3"].forEach(id => {
@@ -817,6 +830,7 @@ async function saveGuest() {
     invitationDate: document.getElementById("f-invitation").value || null,
     briefingDate:   document.getElementById("f-briefing").value   || null,
     interviewDate:  document.getElementById("f-interview").value  || null,
+    notes:          document.getElementById("f-notes").value.trim(),
     offerMade:      document.getElementById("f-offer").checked,
     assetsCreated:  document.getElementById("f-assets-created").checked,
     assetsShared:   document.getElementById("f-assets-shared").checked,

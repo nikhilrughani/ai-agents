@@ -70,6 +70,9 @@ function buildNotionProperties(updates) {
   if (updates.source !== undefined)
     props["Source"] = { rich_text: [{ text: { content: updates.source } }] };
 
+  if (updates.notes !== undefined)
+    props["Notes"] = { rich_text: [{ text: { content: updates.notes || "" } }] };
+
   if ("invitationDate" in updates)
     props["Invitation to briefing"] = updates.invitationDate
       ? { date: { start: updates.invitationDate } }
@@ -147,6 +150,7 @@ function pageToGuest(page) {
     id:             page.id,
     name:           getText(page, "Name") || "Unnamed",
     source:         getText(page, "Source") || "",
+    notes:          getText(page, "Notes") || "",
     stage:          classifyGuest(page),
     briefingDate:   briefingDate?.toISOString().split("T")[0]  || null,
     interviewDate:  interviewDate?.toISOString().split("T")[0] || null,
