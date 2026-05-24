@@ -7,9 +7,8 @@
 # Make sure Node/npm are on the PATH (covers Homebrew on Intel + Apple Silicon)
 export PATH="/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 
-# Always run from the folder this script lives in
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+# Always run from the dashboard folder
+cd "$HOME/ai-agents/mini-talks-dashboard"
 
 clear
 echo "🎙️  Mini-Talks Dashboard"
