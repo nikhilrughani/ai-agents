@@ -7,8 +7,8 @@
 # Make sure Node/npm are on the PATH (covers Homebrew on Intel + Apple Silicon)
 export PATH="/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 
-# Always run from the dashboard folder
-cd "$HOME/ai-agents/mini-talks-dashboard"
+# Hardcoded dashboard path — works no matter where this file lives
+DASHBOARD="$HOME/ai-agents/mini-talks-dashboard"
 
 clear
 echo "🎙️  Mini-Talks Dashboard"
@@ -35,16 +35,16 @@ if lsof -i :3000 -t &>/dev/null 2>&1; then
 fi
 
 # ── Install dependencies if needed ──────────────────────────
-if [ ! -d "node_modules" ]; then
+if [ ! -d "$DASHBOARD/node_modules" ]; then
   echo ""
   echo "📦  Installing dependencies (first run only)..."
-  npm install --silent
+  npm --prefix "$DASHBOARD" install --silent
 fi
 
 # ── Start the server ─────────────────────────────────────────
 echo ""
 echo "🚀  Starting server..."
-npm start &
+npm --prefix "$DASHBOARD" start &
 SERVER_PID=$!
 
 # ── Wait until the server is accepting connections ───────────
