@@ -146,10 +146,25 @@
       border: 1px solid var(--border);
       transition: all .15s;
       user-select: none;
+      position: relative;
     }
     .cb-item.checked { border-color: var(--green); color: var(--green); background: rgba(52,211,153,.1); }
     .cb-item.saving  { opacity:.5; pointer-events:none; }
+    .cb-item.locked  {
+      opacity:.3; cursor:not-allowed; pointer-events:none;
+      border-style: dashed;
+    }
     .cb-box { width:10px;height:10px;border-radius:2px;border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:8px; }
+
+    /* modal locked checkboxes */
+    .modal-checkbox.locked {
+      opacity:.35; cursor:not-allowed;
+    }
+    .modal-checkbox.locked input { pointer-events:none; }
+    .modal-checkbox .lock-hint {
+      font-size:.65rem; color:var(--muted); margin-left:auto;
+      white-space:nowrap;
+    }
 
     .btn-edit {
       font-size:.7rem; padding:4px 10px; border-radius:6px;
@@ -359,14 +374,14 @@
       <!-- Checkboxes -->
       <div class="field">
         <label>Status flags</label>
-        <div class="checkbox-grid">
-          <label class="modal-checkbox"><input type="checkbox" id="f-offer" /><span>Offer Made</span></label>
-          <label class="modal-checkbox"><input type="checkbox" id="f-assets-created" /><span>Assets Created</span></label>
-          <label class="modal-checkbox"><input type="checkbox" id="f-assets-shared" /><span>Assets Shared</span></label>
-          <label class="modal-checkbox"><input type="checkbox" id="f-published" /><span>Published to YouTube</span></label>
-          <label class="modal-checkbox"><input type="checkbox" id="f-reels1" /><span>Reels #1 Published</span></label>
-          <label class="modal-checkbox"><input type="checkbox" id="f-reels2" /><span>Reels #2 Published</span></label>
-          <label class="modal-checkbox"><input type="checkbox" id="f-reels3" /><span>Reels #3 Published</span></label>
+        <div class="checkbox-grid" id="modal-checkbox-grid">
+          <label class="modal-checkbox" id="mcb-offer"><input type="checkbox" id="f-offer" /><span>Offer Made</span><span class="lock-hint" id="lh-offer"></span></label>
+          <label class="modal-checkbox" id="mcb-published"><input type="checkbox" id="f-published" /><span>Published to YouTube</span><span class="lock-hint" id="lh-published"></span></label>
+          <label class="modal-checkbox" id="mcb-assets-created"><input type="checkbox" id="f-assets-created" /><span>Assets Created</span><span class="lock-hint" id="lh-assets-created"></span></label>
+          <label class="modal-checkbox" id="mcb-assets-shared"><input type="checkbox" id="f-assets-shared" /><span>Assets Shared</span><span class="lock-hint" id="lh-assets-shared"></span></label>
+          <label class="modal-checkbox" id="mcb-reels1"><input type="checkbox" id="f-reels1" /><span>Reels #1 Published</span><span class="lock-hint" id="lh-reels1"></span></label>
+          <label class="modal-checkbox" id="mcb-reels2"><input type="checkbox" id="f-reels2" /><span>Reels #2 Published</span><span class="lock-hint" id="lh-reels2"></span></label>
+          <label class="modal-checkbox" id="mcb-reels3"><input type="checkbox" id="f-reels3" /><span>Reels #3 Published</span><span class="lock-hint" id="lh-reels3"></span></label>
         </div>
       </div>
 
@@ -438,6 +453,28 @@ const STAGE_COLORS = {
   "Interview Done":  "var(--c-intdone)",
   "Published":       "var(--c-published)",
 };
+const STAGE_ORDER = {
+  "Outreach Sent":0, "Briefing Booked":1, "Briefing Done":2,
+  "Interview Booked":3, "Interview Done":4, "Published":5,
+};
+
+// Which stage index a field requires before it becomes active
+const FIELD_UNLOCK = {
+  offerMade:     4, // Interview Done
+  published:     4, // Interview Done (checking this moves guest to Published)
+  assetsCreated: 5, // Published
+  assetsShared:  5, // Published
+  reels1:        5, // Published
+  reels2:        5, // Published
+  reels3:        5, // Published
+};
+const UNLOCK_LABEL = { 4: "after interview", 5: "after published" };
+
+function isFieldUnlocked(fieldKey, guestStage) {
+  const required = FIELD_UNLOCK[fieldKey];
+  if (required === undefined) return true; // no restriction
+  return (STAGE_ORDER[guestStage] ?? 0) >= required;
+}
 
 // ── State ──────────────────────────────────────────────────────────────────
 let data         = null;
@@ -534,9 +571,9 @@ function renderDrawer(stageName) {
 
       const cbs = [
         { key:"offerMade",     val:g.offerMade,     label:"Offer" },
+        { key:"published",     val:g.published,     label:"YouTube" },
         { key:"assetsCreated", val:g.assetsCreated, label:"Assets" },
         { key:"assetsShared",  val:g.assetsShared,  label:"Shared" },
-        { key:"published",     val:g.published,     label:"YouTube" },
         { key:"reels1",        val:g.reels1,        label:"Reel 1" },
         { key:"reels2",        val:g.reels2,        label:"Reel 2" },
         { key:"reels3",        val:g.reels3,        label:"Reel 3" },
@@ -550,12 +587,22 @@ function renderDrawer(stageName) {
           </div>
           <div class="guest-right">
             <div class="cb-group">
-              ${cbs.map(cb => `
-                <div class="cb-item ${cb.val?"checked":""}" id="cb-${g.id}-${cb.key}"
-                     onclick="toggleCheckbox('${g.id}','${cb.key}',${!cb.val})">
-                  <div class="cb-box">${cb.val?"✓":""}</div>
-                  <span>${cb.label}</span>
-                </div>`).join("")}
+              ${cbs.map(cb => {
+                const unlocked = isFieldUnlocked(cb.key, g.stage);
+                const classes  = [
+                  "cb-item",
+                  cb.val    ? "checked" : "",
+                  !unlocked ? "locked"  : "",
+                ].filter(Boolean).join(" ");
+                const click = unlocked
+                  ? `onclick="toggleCheckbox('${g.id}','${cb.key}',${!cb.val})"`
+                  : "";
+                return `
+                  <div class="${classes}" id="cb-${g.id}-${cb.key}" ${click}>
+                    <div class="cb-box">${cb.val ? "✓" : (unlocked ? "" : "🔒")}</div>
+                    <span>${cb.label}</span>
+                  </div>`;
+              }).join("")}
             </div>
             <button class="btn-edit" onclick="openEditModal('${g.id}')">Edit</button>
           </div>
@@ -631,12 +678,46 @@ async function toggleCheckbox(guestId, field, newValue) {
 }
 
 // ── Modal logic ────────────────────────────────────────────────────────────
+// Map from field key → {modalCbId, lockHintId, inputId}
+const MODAL_CB_MAP = {
+  offerMade:     { wrap:"mcb-offer",         hint:"lh-offer",         input:"f-offer" },
+  published:     { wrap:"mcb-published",      hint:"lh-published",     input:"f-published" },
+  assetsCreated: { wrap:"mcb-assets-created", hint:"lh-assets-created",input:"f-assets-created" },
+  assetsShared:  { wrap:"mcb-assets-shared",  hint:"lh-assets-shared", input:"f-assets-shared" },
+  reels1:        { wrap:"mcb-reels1",         hint:"lh-reels1",        input:"f-reels1" },
+  reels2:        { wrap:"mcb-reels2",         hint:"lh-reels2",        input:"f-reels2" },
+  reels3:        { wrap:"mcb-reels3",         hint:"lh-reels3",        input:"f-reels3" },
+};
+
+function applyModalLocks(guestStage) {
+  // guestStage = null means "Add" mode → lock all restricted fields
+  for (const [key, ids] of Object.entries(MODAL_CB_MAP)) {
+    const unlocked = guestStage ? isFieldUnlocked(key, guestStage) : (FIELD_UNLOCK[key] === undefined);
+    const wrap  = document.getElementById(ids.wrap);
+    const input = document.getElementById(ids.input);
+    const hint  = document.getElementById(ids.hint);
+    if (!wrap) continue;
+    if (unlocked) {
+      wrap.classList.remove("locked");
+      input.disabled = false;
+      hint.textContent = "";
+    } else {
+      wrap.classList.add("locked");
+      input.disabled = true;
+      input.checked  = false;
+      const req = FIELD_UNLOCK[key];
+      hint.textContent = "🔒 " + (UNLOCK_LABEL[req] || "");
+    }
+  }
+}
+
 function openAddModal() {
   editingGuest = null;
   document.getElementById("modal-title").textContent = "Add Guest";
   document.getElementById("btn-save").textContent = "Add Guest";
   document.getElementById("quick-actions-row").style.display = "none";
   clearModalForm();
+  applyModalLocks(null);
   document.getElementById("modal-error").style.display = "none";
   document.getElementById("modal-overlay").classList.add("open");
   document.getElementById("f-name").focus();
@@ -650,6 +731,7 @@ function openEditModal(guestId) {
   document.getElementById("modal-title").textContent = "Edit — " + guest.name;
   document.getElementById("btn-save").textContent = "Save Changes";
   document.getElementById("modal-error").style.display = "none";
+  applyModalLocks(guest.stage);
 
   // Populate form
   document.getElementById("f-name").value       = guest.name || "";
