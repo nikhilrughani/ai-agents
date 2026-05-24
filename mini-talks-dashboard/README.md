@@ -10,7 +10,7 @@ Supports **Notion** (full read + write) and **Google Sheets** (read-only view).
 
 Each person gets their own private dashboard on Vercel — free, no server to manage.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/nikhilrughani/ai-agents/tree/claude/charming-fermi-S6jTS/mini-talks-dashboard)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fnikhilrughani%2Fai-agents&root-directory=mini-talks-dashboard&project-name=mini-talks-dashboard&repository-name=mini-talks-dashboard)
 
 1. Click the button above
 2. Log in to Vercel (free account)
