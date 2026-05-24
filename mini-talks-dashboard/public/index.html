@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini-Talks Pipeline</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0e0f14;
+      --surface:     #16181f;
+      --surface2:    #1e2029;
+      --border:      #2a2d3a;
+      --text:        #e8eaf0;
+      --muted:       #7a7f96;
+      --accent:      #6c63ff;
+
+      --c-outreach:  #4f8ef7;
+      --c-briefbook: #a78bfa;
+      --c-briefdone: #fb923c;
+      --c-intbook:   #38bdf8;
+      --c-intdone:   #34d399;
+      --c-published: #facc15;
+
+      --red:    #f87171;
+      --green:  #34d399;
+      --yellow: #facc15;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      padding-bottom: 80px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-inner {
+      max-width: 1200px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .title  { font-size: 1.2rem; font-weight: 700; }
+    .subtitle { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+
+    .btn-add {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--accent); color: #fff;
+      border: none; border-radius: 8px;
+      padding: 8px 16px; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn-add:hover { opacity: 0.85; }
+    .btn-settings {
+      background: none; border: 1px solid var(--border); border-radius: 8px;
+      padding: 7px 10px; font-size: 1rem; cursor: pointer; transition: border-color .15s; line-height:1;
+    }
+    .btn-settings:hover { border-color: var(--accent); }
+
+    .refresh-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 5px 12px;
+      font-size: 0.75rem; color: var(--muted);
+    }
+    .pulse {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.75)} }
+
+    #last-updated { font-size: 0.72rem; color: var(--muted); }
+
+    /* ── Shell ── */
+    .shell { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    .section-header {
+      display: flex; align-items: center; gap: 8px; margin: 28px 0 14px;
+    }
+    .section-header h2 { font-size: 0.75rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+    .section-header .line { flex: 1; height: 1px; background: var(--border); }
+
+    /* ── KPI row ── */
+    .health-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px,1fr)); gap: 10px; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+    }
+    .stat-card .label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+    .stat-card .value { font-size: 1.9rem; font-weight: 700; margin-top: 4px; line-height: 1; }
+    .stat-card .sub   { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+    .health-bar-wrap {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+    }
+    .health-bar-wrap .label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+    .bar-outer { height: 9px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+    .bar-inner { height: 100%; border-radius: 99px; transition: width .8s ease; background: linear-gradient(90deg,#6c63ff,#34d399); }
+    .bar-score { font-size: 1.7rem; font-weight: 700; margin-top: 8px; }
+
+    /* ── Pipeline grid ── */
+    .pipeline-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px,1fr)); gap: 10px; }
+    .stage-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 16px; cursor: pointer;
+      transition: border-color .2s, transform .15s;
+      position: relative; overflow: hidden;
+      --stage-color: #fff;
+    }
+    .stage-card:hover  { border-color: var(--stage-color); transform: translateY(-2px); }
+    .stage-card.active { border-color: var(--stage-color); background: var(--surface2); }
+    .stage-card::after { content:''; position:absolute; top:0;left:0;right:0; height:3px; background:var(--stage-color); opacity:.6; }
+    .stage-dot { width:9px;height:9px;border-radius:50%;background:var(--stage-color);box-shadow:0 0 7px var(--stage-color);margin-bottom:10px; }
+    .stage-name  { font-size:.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em; }
+    .stage-count { font-size:2.6rem;font-weight:800;line-height:1;margin-top:3px;color:var(--stage-color); }
+    .stage-label { font-size:.68rem;color:var(--muted);margin-top:2px; }
+
+    /* ── Drawer ── */
+    .drawer {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 12px;
+      margin-top: 10px; overflow: hidden;
+      max-height: 0; opacity: 0; transition: max-height .3s ease, opacity .3s ease;
+    }
+    .drawer.open { max-height: 700px; opacity: 1; overflow-y: auto; }
+    .drawer-header { padding:11px 18px; font-size:.73rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; border-bottom:1px solid var(--border); }
+
+    .guest-row {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      padding: 12px 18px; border-bottom: 1px solid var(--border); gap: 12px;
+    }
+    .guest-row:last-child { border-bottom: none; }
+    .guest-left { flex: 1; min-width: 0; }
+    .guest-name { font-size:.88rem; font-weight:600; cursor:pointer; }
+    .guest-name:hover { color: var(--accent); text-decoration: underline; }
+    .guest-dates { font-size:.72rem; color:var(--muted); margin-top:3px; display:flex; gap:10px; flex-wrap:wrap; }
+    .guest-notes { font-size:.72rem; color:var(--muted); margin-top:4px; font-style:italic; opacity:.8; max-width:340px; white-space:pre-wrap; }
+    .guest-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+
+    /* checkbox toggles */
+    .cb-group { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+    .cb-item {
+      display:flex; align-items:center; gap:4px;
+      font-size:.65rem; color:var(--muted); cursor:pointer;
+      padding:2px 7px; border-radius:99px;
+      border: 1px solid var(--border);
+      transition: all .15s;
+      user-select: none;
+      position: relative;
+    }
+    .cb-item.checked { border-color: var(--green); color: var(--green); background: rgba(52,211,153,.1); }
+    .cb-item.saving  { opacity:.5; pointer-events:none; }
+    .cb-item.locked  {
+      opacity:.3; cursor:not-allowed; pointer-events:none;
+      border-style: dashed;
+    }
+    .cb-box { width:10px;height:10px;border-radius:2px;border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:8px; }
+
+    /* modal locked checkboxes */
+    .modal-checkbox.locked {
+      opacity:.35; cursor:not-allowed;
+    }
+    .modal-checkbox.locked input { pointer-events:none; }
+    .modal-checkbox .lock-hint {
+      font-size:.65rem; color:var(--muted); margin-left:auto;
+      white-space:nowrap;
+    }
+
+    .btn-edit {
+      font-size:.7rem; padding:4px 10px; border-radius:6px;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); cursor:pointer; transition: all .15s; white-space:nowrap;
+    }
+    .btn-edit:hover { border-color:var(--accent); color:var(--text); }
+
+    .empty-drawer { padding:20px 18px; color:var(--muted); font-size:.82rem; text-align:center; }
+
+    /* ── Overdue ── */
+    .overdue-list { display:flex; flex-direction:column; gap:8px; }
+    .overdue-card {
+      display:flex; align-items:center; gap:12px;
+      background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--red);
+      border-radius:10px; padding:13px 16px;
+    }
+    .overdue-name   { font-size:.88rem; font-weight:600; }
+    .overdue-reason { font-size:.74rem; color:var(--muted); margin-top:2px; }
+    .overdue-days   { margin-left:auto; flex-shrink:0; font-size:.72rem; font-weight:700; color:var(--red); background:rgba(248,113,113,.1); padding:3px 9px; border-radius:99px; }
+    .no-overdue     { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px; text-align:center; color:var(--muted); font-size:.85rem; }
+
+    /* ── Error ── */
+    .error-banner {
+      background:rgba(248,113,113,.1); border:1px solid rgba(248,113,113,.3); border-radius:10px;
+      padding:14px 18px; color:var(--red); margin:16px 0; font-size:.83rem; display:none;
+    }
+
+    /* ── Loading ── */
+    .loading-overlay {
+      position:fixed; inset:0; background:var(--bg);
+      display:flex; align-items:center; justify-content:center; z-index:999;
+      transition:opacity .4s;
+    }
+    .loading-overlay.hidden { opacity:0; pointer-events:none; }
+    .spinner { width:38px;height:38px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .loader-text { color:var(--muted);font-size:.88rem;margin-top:14px;text-align:center; }
+
+    /* ── Countdown bar ── */
+    .countdown-bar { position:fixed;bottom:0;left:0;height:3px;background:var(--accent);transition:width 1s linear;z-index:200; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:500;
+      display:flex; align-items:center; justify-content:center; padding:20px;
+      opacity:0; pointer-events:none; transition:opacity .2s;
+    }
+    .modal-overlay.open { opacity:1; pointer-events:all; }
+    .modal {
+      background:var(--surface); border:1px solid var(--border); border-radius:16px;
+      width:100%; max-width:520px; max-height:90vh; overflow-y:auto;
+      transform:translateY(20px); transition:transform .2s;
+    }
+    .modal-overlay.open .modal { transform:translateY(0); }
+
+    .modal-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:18px 22px; border-bottom:1px solid var(--border);
+    }
+    .modal-header h3 { font-size:1rem; font-weight:700; }
+    .btn-close {
+      background:none; border:none; color:var(--muted); font-size:1.4rem;
+      cursor:pointer; line-height:1; padding:0 4px;
+    }
+    .btn-close:hover { color:var(--text); }
+
+    .modal-body { padding:20px 22px; display:flex; flex-direction:column; gap:16px; }
+
+    .field { display:flex; flex-direction:column; gap:6px; }
+    .field label { font-size:.75rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+    .field input[type=text],
+    .field input[type=date],
+    .field textarea {
+      background:var(--surface2); border:1px solid var(--border); border-radius:8px;
+      padding:9px 12px; color:var(--text); font-size:.9rem;
+      outline:none; transition:border-color .15s; width:100%;
+      font-family: inherit;
+    }
+    .field input:focus,
+    .field textarea:focus { border-color:var(--accent); }
+    .field textarea { resize:vertical; min-height:72px; line-height:1.5; }
+    /* make date inputs readable */
+    .field input[type=date]::-webkit-calendar-picker-indicator { filter:invert(1) opacity(.5); cursor:pointer; }
+
+    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+    .checkbox-grid {
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px;
+    }
+    .modal-checkbox {
+      display:flex; align-items:center; gap:8px;
+      background:var(--surface2); border:1px solid var(--border); border-radius:8px;
+      padding:9px 12px; cursor:pointer; user-select:none; transition:border-color .15s;
+    }
+    .modal-checkbox:hover { border-color:var(--accent); }
+    .modal-checkbox input[type=checkbox] { width:15px;height:15px;cursor:pointer;accent-color:var(--accent); }
+    .modal-checkbox span { font-size:.82rem; }
+
+    .quick-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn-quick {
+      font-size:.75rem; padding:6px 13px; border-radius:7px;
+      border:1px solid var(--border); background:var(--surface2);
+      color:var(--text); cursor:pointer; transition:all .15s;
+    }
+    .btn-quick:hover { border-color:var(--accent); background:var(--surface); }
+
+    .modal-footer {
+      display:flex; gap:10px; justify-content:flex-end;
+      padding:16px 22px; border-top:1px solid var(--border);
+    }
+    .btn-cancel {
+      padding:8px 18px; border-radius:8px; border:1px solid var(--border);
+      background:none; color:var(--muted); cursor:pointer; font-size:.85rem;
+    }
+    .btn-cancel:hover { color:var(--text); }
+    .btn-save {
+      padding:8px 20px; border-radius:8px; border:none;
+      background:var(--accent); color:#fff; cursor:pointer; font-size:.85rem; font-weight:600;
+      transition:opacity .15s;
+    }
+    .btn-save:hover  { opacity:.85; }
+    .btn-save:disabled { opacity:.5; cursor:not-allowed; }
+
+    .modal-error { font-size:.78rem; color:var(--red); background:rgba(248,113,113,.1); padding:8px 12px; border-radius:6px; display:none; }
+
+    /* ── Toast ── */
+    .toast {
+      position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+      background:#1e2029; border:1px solid var(--border); border-radius:10px;
+      padding:10px 20px; font-size:.83rem; color:var(--text);
+      opacity:0; transition:opacity .25s, transform .25s; z-index:600;
+      pointer-events:none; white-space:nowrap;
+    }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+    .toast.success { border-color:var(--green); color:var(--green); }
+    .toast.error   { border-color:var(--red);   color:var(--red); }
+
+    @media (max-width:600px) {
+      .pipeline-grid { grid-template-columns:repeat(2,1fr); }
+      .health-row    { grid-template-columns:repeat(2,1fr); }
+      .field-row     { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading">
+  <div style="display:flex;flex-direction:column;align-items:center;">
+    <div class="spinner"></div>
+    <p class="loader-text">Fetching your pipeline from Notion…</p>
+  </div>
+</div>
+
+<!-- Countdown bar -->
+<div class="countdown-bar" id="countdown-bar" style="width:100%"></div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ── Modal ───────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Add Guest</h3>
+      <button class="btn-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Error -->
+      <div class="modal-error" id="modal-error"></div>
+
+      <!-- Quick actions (edit mode only) -->
+      <div id="quick-actions-row" style="display:none">
+        <div class="field"><label>Quick Actions</label></div>
+        <div class="quick-actions" id="quick-actions"></div>
+      </div>
+
+      <!-- Name & Source -->
+      <div class="field-row">
+        <div class="field">
+          <label>Guest Name *</label>
+          <input type="text" id="f-name" placeholder="Jane Smith" />
+        </div>
+        <div class="field">
+          <label>Source</label>
+          <input type="text" id="f-source" placeholder="LinkedIn, referral…" />
+        </div>
+      </div>
+
+      <!-- Dates -->
+      <div class="field-row">
+        <div class="field">
+          <label>Invitation Date</label>
+          <input type="date" id="f-invitation" />
+        </div>
+        <div class="field">
+          <label>Briefing Date</label>
+          <input type="date" id="f-briefing" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Interview Date</label>
+          <input type="date" id="f-interview" />
+        </div>
+        <div class="field"><!-- spacer --></div>
+      </div>
+
+      <!-- Notes -->
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="f-notes" rows="3" placeholder="Add any notes about this guest…"></textarea>
+      </div>
+
+      <!-- Checkboxes -->
+      <div class="field">
+        <label>Status flags</label>
+        <div class="checkbox-grid" id="modal-checkbox-grid">
+          <label class="modal-checkbox" id="mcb-offer"><input type="checkbox" id="f-offer" /><span>Offer Made</span><span class="lock-hint" id="lh-offer"></span></label>
+          <label class="modal-checkbox" id="mcb-published"><input type="checkbox" id="f-published" /><span>Published to YouTube</span><span class="lock-hint" id="lh-published"></span></label>
+          <label class="modal-checkbox" id="mcb-assets-created"><input type="checkbox" id="f-assets-created" /><span>Assets Created</span><span class="lock-hint" id="lh-assets-created"></span></label>
+          <label class="modal-checkbox" id="mcb-assets-shared"><input type="checkbox" id="f-assets-shared" /><span>Assets Shared</span><span class="lock-hint" id="lh-assets-shared"></span></label>
+          <label class="modal-checkbox" id="mcb-reels1"><input type="checkbox" id="f-reels1" /><span>Reels #1 Published</span><span class="lock-hint" id="lh-reels1"></span></label>
+          <label class="modal-checkbox" id="mcb-reels2"><input type="checkbox" id="f-reels2" /><span>Reels #2 Published</span><span class="lock-hint" id="lh-reels2"></span></label>
+          <label class="modal-checkbox" id="mcb-reels3"><input type="checkbox" id="f-reels3" /><span>Reels #3 Published</span><span class="lock-hint" id="lh-reels3"></span></label>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" id="btn-save" onclick="saveGuest()">Save Guest</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Header ────────────────────────────────────────────────────── -->
+<header>
+  <div class="header-inner">
+    <div class="header-left">
+      <span style="font-size:1.4rem">🎙️</span>
+      <div>
+        <div class="title">Mini-Talks Pipeline</div>
+        <div class="subtitle">Live dashboard · Auto-refreshes every 60s</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="btn-add" onclick="openAddModal()">＋ Add Guest</button>
+      <button class="btn-settings" onclick="window.location='/setup.html'" title="Settings">⚙️</button>
+      <div class="refresh-badge">
+        <div class="pulse"></div>
+        <span id="countdown-text">60s</span>
+      </div>
+      <div id="last-updated">—</div>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+
+  <div class="error-banner" id="error-banner"></div>
+
+  <!-- KPIs -->
+  <div class="section-header">
+    <h2>Pipeline Health</h2><div class="line"></div>
+  </div>
+  <div class="health-row" id="health-row"></div>
+
+  <!-- Stages -->
+  <div class="section-header" style="margin-top:32px">
+    <h2>Stages</h2><div class="line"></div>
+  </div>
+  <div class="pipeline-grid" id="pipeline-grid"></div>
+  <div class="drawer" id="stage-drawer">
+    <div class="drawer-header" id="drawer-title"></div>
+    <div id="drawer-content"></div>
+  </div>
+
+  <!-- Overdue -->
+  <div class="section-header" style="margin-top:32px">
+    <h2>⚠️ Needs Attention</h2><div class="line"></div>
+  </div>
+  <div class="overdue-list" id="overdue-list"></div>
+
+</main>
+
+<script>
+// ── Credentials ────────────────────────────────────────────────────────────
+function getCreds() { return JSON.parse(localStorage.getItem("miniTalksCreds") || "{}"); }
+
+function credHeaders(extra) {
+  const c = getCreds();
+  return Object.assign({
+    "Content-Type":   "application/json",
+    "x-data-source":  c.source      || "notion",
+    "x-notion-token": c.notionToken || "",
+    "x-notion-db-id": c.notionDbId  || "",
+    "x-sheets-url":   c.sheetsUrl   || "",
+  }, extra);
+}
+
+function isReadOnly() { return getCreds().source === "sheets"; }
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const REFRESH_INTERVAL = 60;
+const STAGE_COLORS = {
+  "Outreach Sent":   "var(--c-outreach)",
+  "Briefing Booked": "var(--c-briefbook)",
+  "Briefing Done":   "var(--c-briefdone)",
+  "Interview Booked":"var(--c-intbook)",
+  "Interview Done":  "var(--c-intdone)",
+  "Published":       "var(--c-published)",
+};
+const STAGE_ORDER = {
+  "Outreach Sent":0, "Briefing Booked":1, "Briefing Done":2,
+  "Interview Booked":3, "Interview Done":4, "Published":5,
+};
+
+// Which stage index a field requires before it becomes active
+const FIELD_UNLOCK = {
+  offerMade:     4, // Interview Done
+  published:     4, // Interview Done (checking this moves guest to Published)
+  assetsCreated: 5, // Published
+  assetsShared:  5, // Published
+  reels1:        5, // Published
+  reels2:        5, // Published
+  reels3:        5, // Published
+};
+const UNLOCK_LABEL = { 4: "after interview", 5: "after published" };
+
+function isFieldUnlocked(fieldKey, guestStage) {
+  const required = FIELD_UNLOCK[fieldKey];
+  if (required === undefined) return true; // no restriction
+  return (STAGE_ORDER[guestStage] ?? 0) >= required;
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+let data         = null;
+let activeStage  = null;
+let editingGuest = null;  // null = add mode, object = edit mode
+let countdownSecs = REFRESH_INTERVAL;
+let countdownTimer = null;
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+function fmtDate(iso) {
+  if (!iso) return null;
+  const [y,m,d] = iso.split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${parseInt(d)} ${months[parseInt(m)-1]}`;
+}
+
+function relDay(iso) {
+  if (!iso) return "";
+  const diff = Math.round((Date.now() - new Date(iso+"T12:00:00").getTime()) / 86_400_000);
+  if (diff === 0)  return "today";
+  if (diff === 1)  return "yesterday";
+  if (diff === -1) return "tomorrow";
+  if (diff < 0)   return `in ${Math.abs(diff)}d`;
+  return `${diff}d ago`;
+}
+
+function healthColor(s) {
+  return s >= 70 ? "var(--green)" : s >= 40 ? "var(--yellow)" : "var(--red)";
+}
+
+function showToast(msg, type = "success") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove("show"), 2800);
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function renderHealth(d) {
+  document.getElementById("health-row").innerHTML = `
+    <div class="health-bar-wrap">
+      <div class="label">Overall Health</div>
+      <div class="bar-outer"><div class="bar-inner" id="health-bar" style="width:0%"></div></div>
+      <div class="bar-score" style="color:${healthColor(d.healthScore)}">${d.healthScore}<span style="font-size:.9rem;font-weight:400;color:var(--muted)">/100</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Guests</div>
+      <div class="value">${d.totalGuests}</div>
+      <div class="sub">${d.totalActive} active in pipeline</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">This Week</div>
+      <div class="value" style="color:var(--c-intdone)">${d.weeklyInterviews}</div>
+      <div class="sub">interview${d.weeklyInterviews!==1?"s":""} · ${d.weeklyBriefings} briefing${d.weeklyBriefings!==1?"s":""}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Needs Attention</div>
+      <div class="value" style="color:${d.overdue.length>0?"var(--red)":"var(--green)"}">${d.overdue.length}</div>
+      <div class="sub">${d.overdue.length===0?"All guests on track 🎉":"follow-up overdue"}</div>
+    </div>`;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const b = document.getElementById("health-bar");
+    if (b) b.style.width = d.healthScore + "%";
+  }));
+}
+
+function renderPipeline(d) {
+  document.getElementById("pipeline-grid").innerHTML = d.stages.map(s => `
+    <div class="stage-card ${activeStage===s.name?"active":""}"
+         style="--stage-color:${STAGE_COLORS[s.name]||"#fff"}"
+         onclick="toggleDrawer('${s.name}')">
+      <div class="stage-dot"></div>
+      <div class="stage-name">${s.name}</div>
+      <div class="stage-count">${s.count}</div>
+      <div class="stage-label">guest${s.count!==1?"s":""}</div>
+    </div>`).join("");
+}
+
+function renderDrawer(stageName) {
+  const stage = data.stages.find(s => s.name === stageName);
+  if (!stage) return;
+  document.getElementById("drawer-title").textContent = `${stageName} · ${stage.count} guest${stage.count!==1?"s":""}`;
+
+  if (!stage.guests.length) {
+    document.getElementById("drawer-content").innerHTML = `<div class="empty-drawer">No guests at this stage yet</div>`;
+  } else {
+    document.getElementById("drawer-content").innerHTML = stage.guests.map(g => {
+      const dates = [];
+      if (g.invitationDate) dates.push(`Invited: ${fmtDate(g.invitationDate)} <span style="opacity:.5">(${relDay(g.invitationDate)})</span>`);
+      if (g.briefingDate)   dates.push(`Briefing: ${fmtDate(g.briefingDate)} <span style="opacity:.5">(${relDay(g.briefingDate)})</span>`);
+      if (g.interviewDate)  dates.push(`Interview: ${fmtDate(g.interviewDate)} <span style="opacity:.5">(${relDay(g.interviewDate)})</span>`);
+
+      const cbs = [
+        { key:"offerMade",     val:g.offerMade,     label:"Offer" },
+        { key:"published",     val:g.published,     label:"YouTube" },
+        { key:"assetsCreated", val:g.assetsCreated, label:"Assets" },
+        { key:"assetsShared",  val:g.assetsShared,  label:"Shared" },
+        { key:"reels1",        val:g.reels1,        label:"Reel 1" },
+        { key:"reels2",        val:g.reels2,        label:"Reel 2" },
+        { key:"reels3",        val:g.reels3,        label:"Reel 3" },
+      ];
+
+      return `
+        <div class="guest-row">
+          <div class="guest-left">
+            <div class="guest-name" onclick="openEditModal('${g.id}')">${esc(g.name)}</div>
+            ${dates.length ? `<div class="guest-dates">${dates.join(" · ")}</div>` : ""}
+            ${g.notes ? `<div class="guest-notes">${esc(g.notes)}</div>` : ""}
+          </div>
+          <div class="guest-right">
+            <div class="cb-group">
+              ${cbs.map(cb => {
+                const unlocked = isFieldUnlocked(cb.key, g.stage);
+                const classes  = [
+                  "cb-item",
+                  cb.val    ? "checked" : "",
+                  !unlocked ? "locked"  : "",
+                ].filter(Boolean).join(" ");
+                const click = unlocked
+                  ? `onclick="toggleCheckbox('${g.id}','${cb.key}',${!cb.val})"`
+                  : "";
+                return `
+                  <div class="${classes}" id="cb-${g.id}-${cb.key}" ${click}>
+                    <div class="cb-box">${cb.val ? "✓" : (unlocked ? "" : "🔒")}</div>
+                    <span>${cb.label}</span>
+                  </div>`;
+              }).join("")}
+            </div>
+            <button class="btn-edit" onclick="openEditModal('${g.id}')">Edit</button>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  document.getElementById("stage-drawer").classList.add("open");
+}
+
+function renderOverdue(d) {
+  const el = document.getElementById("overdue-list");
+  if (!d.overdue.length) {
+    el.innerHTML = `<div class="no-overdue"><span style="font-size:1.4rem;display:block;margin-bottom:6px">✅</span>No one needs follow-up — pipeline is flowing!</div>`;
+  } else {
+    el.innerHTML = d.overdue.map(o => `
+      <div class="overdue-card" onclick="openEditModal('${o.id}')" style="cursor:pointer">
+        <span style="font-size:1.1rem">⚠️</span>
+        <div>
+          <div class="overdue-name">${esc(o.name)}</div>
+          <div class="overdue-reason">${esc(o.reason)}</div>
+        </div>
+        <div class="overdue-days">${o.daysOverdue}d overdue</div>
+      </div>`).join("");
+  }
+}
+
+// ── Toggle drawer ──────────────────────────────────────────────────────────
+function toggleDrawer(stageName) {
+  const drawer = document.getElementById("stage-drawer");
+  if (activeStage === stageName) {
+    activeStage = null;
+    drawer.classList.remove("open");
+  } else {
+    activeStage = stageName;
+    renderDrawer(stageName);
+  }
+  renderPipeline(data);
+}
+
+// ── Inline checkbox toggle ─────────────────────────────────────────────────
+async function toggleCheckbox(guestId, field, newValue) {
+  const el = document.getElementById(`cb-${guestId}-${field}`);
+  if (!el) return;
+  el.classList.add("saving");
+
+  try {
+    const res = await fetch(`/api/guests/${guestId}`, {
+      method:"PATCH",
+      headers: credHeaders(),
+      body: JSON.stringify({ [field]: newValue }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+
+    // Update local data
+    for (const stage of data.stages)
+      for (const g of stage.guests)
+        if (g.id === guestId) { g[field] = newValue; break; }
+
+    // Re-classify if published changed (guest may move stage)
+    if (field === "published") {
+      await fetchDashboard();
+    } else {
+      el.classList.toggle("checked", newValue);
+      el.querySelector(".cb-box").textContent = newValue ? "✓" : "";
+      el.classList.remove("saving");
+    }
+    showToast(newValue ? "✓ Marked done" : "Unmarked");
+  } catch (err) {
+    el.classList.remove("saving");
+    showToast("Error: " + err.message, "error");
+  }
+}
+
+// ── Modal logic ────────────────────────────────────────────────────────────
+// Map from field key → {modalCbId, lockHintId, inputId}
+const MODAL_CB_MAP = {
+  offerMade:     { wrap:"mcb-offer",         hint:"lh-offer",         input:"f-offer" },
+  published:     { wrap:"mcb-published",      hint:"lh-published",     input:"f-published" },
+  assetsCreated: { wrap:"mcb-assets-created", hint:"lh-assets-created",input:"f-assets-created" },
+  assetsShared:  { wrap:"mcb-assets-shared",  hint:"lh-assets-shared", input:"f-assets-shared" },
+  reels1:        { wrap:"mcb-reels1",         hint:"lh-reels1",        input:"f-reels1" },
+  reels2:        { wrap:"mcb-reels2",         hint:"lh-reels2",        input:"f-reels2" },
+  reels3:        { wrap:"mcb-reels3",         hint:"lh-reels3",        input:"f-reels3" },
+};
+
+function applyModalLocks(guestStage) {
+  // guestStage = null means "Add" mode → lock all restricted fields
+  for (const [key, ids] of Object.entries(MODAL_CB_MAP)) {
+    const unlocked = guestStage ? isFieldUnlocked(key, guestStage) : (FIELD_UNLOCK[key] === undefined);
+    const wrap  = document.getElementById(ids.wrap);
+    const input = document.getElementById(ids.input);
+    const hint  = document.getElementById(ids.hint);
+    if (!wrap) continue;
+    if (unlocked) {
+      wrap.classList.remove("locked");
+      input.disabled = false;
+      hint.textContent = "";
+    } else {
+      wrap.classList.add("locked");
+      input.disabled = true;
+      input.checked  = false;
+      const req = FIELD_UNLOCK[key];
+      hint.textContent = "🔒 " + (UNLOCK_LABEL[req] || "");
+    }
+  }
+}
+
+function openAddModal() {
+  editingGuest = null;
+  document.getElementById("modal-title").textContent = "Add Guest";
+  document.getElementById("btn-save").textContent = "Add Guest";
+  document.getElementById("quick-actions-row").style.display = "none";
+  clearModalForm();
+  applyModalLocks(null);
+  document.getElementById("modal-error").style.display = "none";
+  document.getElementById("modal-overlay").classList.add("open");
+  document.getElementById("f-name").focus();
+}
+
+function openEditModal(guestId) {
+  const guest = findGuest(guestId);
+  if (!guest) return;
+  editingGuest = guest;
+
+  document.getElementById("modal-title").textContent = "Edit — " + guest.name;
+  document.getElementById("btn-save").textContent = "Save Changes";
+  document.getElementById("modal-error").style.display = "none";
+  applyModalLocks(guest.stage);
+
+  // Populate form
+  document.getElementById("f-name").value       = guest.name || "";
+  document.getElementById("f-source").value     = guest.source || "";
+  document.getElementById("f-invitation").value = guest.invitationDate || "";
+  document.getElementById("f-briefing").value   = guest.briefingDate   || "";
+  document.getElementById("f-interview").value  = guest.interviewDate  || "";
+  document.getElementById("f-notes").value      = guest.notes || "";
+  document.getElementById("f-offer").checked           = guest.offerMade;
+  document.getElementById("f-assets-created").checked  = guest.assetsCreated;
+  document.getElementById("f-assets-shared").checked   = guest.assetsShared;
+  document.getElementById("f-published").checked        = guest.published;
+  document.getElementById("f-reels1").checked           = guest.reels1;
+  document.getElementById("f-reels2").checked           = guest.reels2;
+  document.getElementById("f-reels3").checked           = guest.reels3;
+
+  // Quick actions based on current stage
+  buildQuickActions(guest);
+
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+function buildQuickActions(guest) {
+  const row = document.getElementById("quick-actions-row");
+  const container = document.getElementById("quick-actions");
+  const today = new Date().toISOString().split("T")[0];
+
+  const actions = [];
+  if (!guest.invitationDate)
+    actions.push({ label:"📅 Set Invitation Today",  fn: () => { document.getElementById("f-invitation").value = today; } });
+  if (!guest.briefingDate)
+    actions.push({ label:"📅 Book Briefing",         fn: () => { document.getElementById("f-briefing").value = today; } });
+  if (!guest.interviewDate)
+    actions.push({ label:"📅 Book Interview",        fn: () => { document.getElementById("f-interview").value = today; } });
+  if (!guest.published)
+    actions.push({ label:"🎉 Mark Published",        fn: () => { document.getElementById("f-published").checked = true; } });
+  if (!guest.assetsCreated)
+    actions.push({ label:"✅ Assets Created",        fn: () => { document.getElementById("f-assets-created").checked = true; } });
+
+  if (actions.length) {
+    container.innerHTML = actions.map((a, i) =>
+      `<button class="btn-quick" onclick="quickActions[${i}].fn()">${a.label}</button>`
+    ).join("");
+    window.quickActions = actions;
+    row.style.display = "block";
+  } else {
+    row.style.display = "none";
+  }
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").classList.remove("open");
+  editingGuest = null;
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById("modal-overlay")) closeModal();
+}
+
+function clearModalForm() {
+  ["f-name","f-source","f-invitation","f-briefing","f-interview","f-notes"].forEach(id => {
+    document.getElementById(id).value = "";
+  });
+  ["f-offer","f-assets-created","f-assets-shared","f-published","f-reels1","f-reels2","f-reels3"].forEach(id => {
+    document.getElementById(id).checked = false;
+  });
+}
+
+async function saveGuest() {
+  const btn = document.getElementById("btn-save");
+  const errEl = document.getElementById("modal-error");
+  errEl.style.display = "none";
+
+  const name = document.getElementById("f-name").value.trim();
+  if (!name) {
+    errEl.textContent = "Guest name is required.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const payload = {
+    name,
+    source:         document.getElementById("f-source").value.trim(),
+    invitationDate: document.getElementById("f-invitation").value || null,
+    briefingDate:   document.getElementById("f-briefing").value   || null,
+    interviewDate:  document.getElementById("f-interview").value  || null,
+    notes:          document.getElementById("f-notes").value.trim(),
+    offerMade:      document.getElementById("f-offer").checked,
+    assetsCreated:  document.getElementById("f-assets-created").checked,
+    assetsShared:   document.getElementById("f-assets-shared").checked,
+    published:      document.getElementById("f-published").checked,
+    reels1:         document.getElementById("f-reels1").checked,
+    reels2:         document.getElementById("f-reels2").checked,
+    reels3:         document.getElementById("f-reels3").checked,
+  };
+
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+
+  try {
+    const url    = editingGuest ? `/api/guests/${editingGuest.id}` : "/api/guests";
+    const method = editingGuest ? "PATCH" : "POST";
+    const res    = await fetch(url, { method, headers: credHeaders(), body:JSON.stringify(payload) });
+    if (!res.ok) throw new Error((await res.json()).error || "Save failed");
+
+    closeModal();
+    showToast(editingGuest ? `✓ ${name} updated` : `✓ ${name} added to pipeline`);
+    await fetchDashboard();
+  } catch (err) {
+    errEl.textContent = "Error: " + err.message;
+    errEl.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = editingGuest ? "Save Changes" : "Add Guest";
+  }
+}
+
+// ── Fetch & render full dashboard ──────────────────────────────────────────
+async function fetchDashboard() {
+  // If no credentials saved, send to setup wizard
+  const c = getCreds();
+  if (!c.source && !c.notionToken && !c.sheetsUrl) {
+    const hasEnv = await fetch("/api/health").then(r=>r.ok).catch(()=>false);
+    // Only redirect if server has no env vars either — check via a probe
+    const probe = await fetch("/api/dashboard", { headers: credHeaders() });
+    if (!probe.ok) { window.location = "/setup.html"; return; }
+  }
+
+  // Hide Add Guest button for read-only sources
+  const addBtn = document.querySelector(".btn-add");
+  if (addBtn) addBtn.style.display = isReadOnly() ? "none" : "";
+
+  const errEl = document.getElementById("error-banner");
+  try {
+    const res = await fetch("/api/dashboard", { headers: credHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+
+    errEl.style.display = "none";
+    renderHealth(data);
+    renderPipeline(data);
+    renderOverdue(data);
+    if (activeStage) renderDrawer(activeStage);
+
+    const ts = new Date(data.lastUpdated);
+    document.getElementById("last-updated").textContent =
+      "Updated " + ts.toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+
+  } catch (err) {
+    errEl.style.display = "block";
+    errEl.textContent = "⚠️  Could not reach Notion API — " + err.message + ". Retrying in 60s.";
+  } finally {
+    document.getElementById("loading").classList.add("hidden");
+  }
+}
+
+function findGuest(id) {
+  if (!data) return null;
+  for (const s of data.stages)
+    for (const g of s.guests)
+      if (g.id === id) return g;
+  return null;
+}
+
+// ── Countdown ──────────────────────────────────────────────────────────────
+function startCountdown() {
+  countdownSecs = REFRESH_INTERVAL;
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    countdownSecs--;
+    document.getElementById("countdown-text").textContent = countdownSecs + "s";
+    document.getElementById("countdown-bar").style.width = (countdownSecs / REFRESH_INTERVAL * 100) + "%";
+    if (countdownSecs <= 0) { fetchDashboard(); countdownSecs = REFRESH_INTERVAL; }
+  }, 1000);
+}
+
+// Keyboard: Escape closes modal
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+// ── Init ───────────────────────────────────────────────────────────────────
+fetchDashboard().then(() => startCountdown());
+</script>
+</body>
+</html>
