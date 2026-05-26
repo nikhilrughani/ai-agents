@@ -57,6 +57,13 @@
     .source-name { font-size:.9rem; font-weight:700; }
     .source-desc { font-size:.72rem; color:var(--muted); margin-top:4px; line-height:1.4; }
 
+    /* Recommended badge */
+    .badge-rec {
+      display:inline-block; margin-top:6px; padding:2px 8px; border-radius:20px;
+      font-size:.65rem; font-weight:700; letter-spacing:.04em;
+      background:rgba(52,211,153,.15); color:var(--green); border:1px solid rgba(52,211,153,.3);
+    }
+
     /* Fields */
     .field { margin-bottom:16px; }
     .field label { display:block; font-size:.73rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
@@ -69,6 +76,19 @@
     .field .hint { font-size:.72rem; color:var(--muted); margin-top:5px; line-height:1.4; }
     .field .hint a { color:var(--accent); text-decoration:none; }
     .field .hint a:hover { text-decoration:underline; }
+
+    /* CSV drop zone */
+    .drop-zone {
+      border:2px dashed var(--border); border-radius:10px; padding:32px 20px;
+      text-align:center; cursor:pointer; transition:all .2s; margin-bottom:16px;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color:var(--accent); background:rgba(75,184,208,.04); }
+    .drop-zone.has-file { border-color:var(--green); background:rgba(52,211,153,.04); }
+    .drop-icon { font-size:2.2rem; margin-bottom:8px; }
+    .drop-label { font-size:.85rem; font-weight:600; margin-bottom:4px; }
+    .drop-sub   { font-size:.73rem; color:var(--muted); }
+    .drop-filename { font-size:.82rem; color:var(--green); margin-top:6px; font-weight:600; }
+    input[type="file"] { display:none; }
 
     /* Callout */
     .callout { background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:14px 16px; font-size:.78rem; color:var(--muted); line-height:1.5; margin-bottom:16px; }
@@ -123,7 +143,7 @@
         <div class="logo-sub">by <a href="https://nikhilrughani.com" target="_blank" style="color:#4bb8d0;text-decoration:none;font-weight:600">Nikhil Rughani</a></div>
       </div>
     </div>
-    <p>Connect your data source and your pipeline will be live in under a minute.</p>
+    <p>Choose how you want to manage your guest data and your pipeline will be live in seconds.</p>
   </div>
 
   <!-- Logged-in user strip -->
@@ -135,35 +155,80 @@
   <!-- Step tabs -->
   <div class="steps">
     <div class="step active" id="tab-1">1 · Data Source</div>
-    <div class="step"        id="tab-2">2 · Credentials</div>
+    <div class="step"        id="tab-2">2 · Configure</div>
     <div class="step"        id="tab-3">3 · Done</div>
   </div>
 
-  <!-- Step 1: Choose source -->
+  <!-- ── Step 1: Choose source ── -->
   <div class="step-panel active" id="panel-1">
-    <p style="font-size:.82rem;color:var(--muted);margin-bottom:16px">Where is your guest data stored?</p>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:16px">Where should your guest data live?</p>
     <div class="source-grid">
-      <div class="source-card active" id="src-notion" onclick="selectSource('notion')">
+
+      <div class="source-card active" id="src-fresh" onclick="selectSource('fresh')">
+        <div class="source-icon">🚀</div>
+        <div class="source-name">Start Fresh</div>
+        <div class="source-desc">Add guests manually.<br>Zero setup required.</div>
+        <div class="badge-rec">Recommended</div>
+      </div>
+
+      <div class="source-card" id="src-csv" onclick="selectSource('csv')">
+        <div class="source-icon">📄</div>
+        <div class="source-name">Import CSV</div>
+        <div class="source-desc">Upload a spreadsheet<br>to pre-fill your pipeline.</div>
+      </div>
+
+      <div class="source-card" id="src-notion" onclick="selectSource('notion')">
         <div class="source-icon">🗄️</div>
         <div class="source-name">Notion</div>
-        <div class="source-desc">Full read + write.<br>Recommended.</div>
+        <div class="source-desc">Connect an existing<br>Notion database.</div>
       </div>
+
       <div class="source-card" id="src-sheets" onclick="selectSource('sheets')">
         <div class="source-icon">📊</div>
         <div class="source-name">Google Sheets</div>
         <div class="source-desc">Read-only view.<br>Edit in your sheet.</div>
       </div>
+
     </div>
     <div class="btn-row">
-      <button class="btn btn-primary" onclick="goStep(2)">Next →</button>
+      <button class="btn btn-primary" id="btn-step1-next" onclick="step1Next()">Next →</button>
     </div>
   </div>
 
-  <!-- Step 2: Credentials -->
+  <!-- ── Step 2: Configure ── -->
   <div class="step-panel" id="panel-2">
 
+    <!-- Start Fresh (no fields needed) -->
+    <div id="fresh-fields" style="display:none">
+      <div class="callout">
+        <strong>Ready to go!</strong> Your dashboard is backed by Firebase — no external accounts needed.
+        You can add guests directly from the pipeline view. Click <strong>Save & Continue</strong> below.
+      </div>
+    </div>
+
+    <!-- Import CSV fields -->
+    <div id="csv-fields" style="display:none">
+      <div class="callout">
+        <strong>CSV column order (row 1 = headers, ignored):</strong><br><br>
+        <code style="font-size:.7rem;line-height:1.8">
+          Guest Name · Source · Invitation Date · Briefing Date · Interview Date · Notes ·
+          Offer Made · Assets Created · Assets Shared · Published · Reels 1 · Reels 2 · Reels 3
+        </code><br><br>
+        Dates: <strong>YYYY-MM-DD</strong> or <strong>DD/MM/YYYY</strong>.
+        Checkboxes: <strong>TRUE / FALSE</strong> or <strong>Yes / No</strong>.
+      </div>
+
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('csv-file').click()">
+        <div class="drop-icon">📂</div>
+        <div class="drop-label">Click to choose your CSV file</div>
+        <div class="drop-sub">or drag and drop it here</div>
+        <div class="drop-filename" id="drop-filename" style="display:none"></div>
+      </div>
+      <input type="file" id="csv-file" accept=".csv,text/csv" onchange="onFileChange(this)" />
+    </div>
+
     <!-- Notion fields -->
-    <div id="notion-fields">
+    <div id="notion-fields" style="display:none">
       <div class="callout">
         <strong>Before you start:</strong> make sure your Notion integration is connected to your database.
         In Notion open your database → <strong>···</strong> menu → <strong>Connections</strong> → select your integration.
@@ -208,25 +273,24 @@
       </div>
     </div>
 
-    <button class="btn btn-primary" onclick="testAndSave()" id="btn-test" style="width:100%;margin-top:4px">
-      Test &amp; Save Connection
+    <button class="btn btn-primary" onclick="saveSource()" id="btn-save" style="width:100%;margin-top:4px">
+      Save &amp; Continue
     </button>
     <div class="test-result" id="test-result"></div>
 
     <div class="btn-row" style="margin-top:16px">
       <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
-      <button class="btn btn-primary" id="btn-next2" onclick="goStep(3)" disabled>Continue →</button>
     </div>
   </div>
 
-  <!-- Step 3: Done -->
+  <!-- ── Step 3: Done ── -->
   <div class="step-panel" id="panel-3">
     <div class="success-icon">🎉</div>
-    <div class="success-title">You're all set!</div>
-    <div class="success-sub">Your credentials are saved securely to your account. Your pipeline dashboard is ready.</div>
+    <div class="success-title" id="done-title">You're all set!</div>
+    <div class="success-sub" id="done-sub">Your pipeline dashboard is ready. Start adding guests!</div>
     <button class="btn-launch" onclick="window.location.href='/'">Open Dashboard →</button>
     <p style="font-size:.72rem;color:var(--muted);text-align:center;margin-top:14px">
-      Want to change your settings later? Click the ⚙️ icon in the dashboard header.
+      Want to change your data source later? Click the ⚙️ icon in the dashboard header.
     </p>
   </div>
 
@@ -235,7 +299,7 @@
 <footer>
   Mini-Talks Dashboard &nbsp;·&nbsp;
   Built by <a href="https://nikhilrughani.com" target="_blank" style="color:var(--accent);text-decoration:none">Nikhil Rughani</a>
-  &nbsp;·&nbsp; credentials stored securely in your account
+  &nbsp;·&nbsp; your data is stored securely in your account
 </footer>
 
 <!-- Firebase SDK — loaded from Google's CDN, configured via firebase-config.js -->
@@ -247,7 +311,8 @@
 <script>
   const auth = firebase.auth();
   let currentUser = null;
-  let selectedSource = "notion";
+  let selectedSource = "fresh"; // fresh | csv | notion | sheets
+  let csvContent = null;        // raw text of the uploaded CSV
 
   // ── Auth gate ──────────────────────────────────────────────────────────────
   auth.onAuthStateChanged(user => {
@@ -268,12 +333,15 @@
   }
 
   // ── Source picker ──────────────────────────────────────────────────────────
+  const ALL_SOURCES = ["fresh","csv","notion","sheets"];
   function selectSource(src) {
     selectedSource = src;
-    document.getElementById("src-notion").classList.toggle("active", src === "notion");
-    document.getElementById("src-sheets").classList.toggle("active", src === "sheets");
+    ALL_SOURCES.forEach(s => {
+      document.getElementById(`src-${s}`).classList.toggle("active", s === src);
+    });
   }
 
+  // ── Step navigation ────────────────────────────────────────────────────────
   function goStep(n) {
     [1,2,3].forEach(i => {
       document.getElementById(`panel-${i}`).classList.toggle("active", i === n);
@@ -282,67 +350,173 @@
       tab.classList.toggle("done", i < n);
     });
     if (n === 2) {
-      document.getElementById("notion-fields").style.display = selectedSource === "notion" ? "block" : "none";
-      document.getElementById("sheets-fields").style.display = selectedSource === "sheets" ? "block" : "none";
-      document.getElementById("btn-next2").disabled = true;
-      document.getElementById("test-result").style.display = "none";
+      // Show the right fields panel
+      ["fresh","csv","notion","sheets"].forEach(s => {
+        document.getElementById(`${s}-fields`).style.display = s === selectedSource ? "block" : "none";
+      });
+      // Reset save button
+      const btn = document.getElementById("btn-save");
+      const result = document.getElementById("test-result");
+      if (selectedSource === "fresh") {
+        btn.textContent = "Save & Continue";
+      } else if (selectedSource === "csv") {
+        btn.textContent = "Import & Save";
+      } else {
+        btn.textContent = "Test & Save Connection";
+      }
+      btn.disabled = false;
+      result.style.display = "none";
+      result.className = "test-result";
     }
   }
 
+  // ── Step 1 "Next" ──────────────────────────────────────────────────────────
+  // For "fresh" we can skip step 2 entirely and save directly
+  function step1Next() {
+    if (selectedSource === "fresh") {
+      // Skip step 2 — save immediately
+      saveFresh();
+    } else {
+      goStep(2);
+    }
+  }
+
+  // Save "Start Fresh" without going through step 2
+  async function saveFresh() {
+    const btn = document.getElementById("btn-step1-next");
+    btn.disabled = true;
+    btn.textContent = "Setting up…";
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ source: "firestore" }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Setup failed");
+      setDoneText("You're all set! 🚀", "Your dashboard is ready. Add your first guest from the pipeline view.");
+      goStep(3);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "Next →";
+      alert("Error: " + err.message);
+    }
+  }
+
+  // ── CSV file handling ──────────────────────────────────────────────────────
+  function onFileChange(input) {
+    const file = input.files[0];
+    if (!file) return;
+    setDropFile(file.name);
+    const reader = new FileReader();
+    reader.onload = e => { csvContent = e.target.result; };
+    reader.readAsText(file);
+  }
+
+  function setDropFile(name) {
+    const zone = document.getElementById("drop-zone");
+    const label = document.getElementById("drop-filename");
+    zone.classList.add("has-file");
+    label.textContent = "✅ " + name;
+    label.style.display = "block";
+  }
+
+  // Drag & drop on the drop zone
+  const dropZone = document.getElementById("drop-zone");
+  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      setDropFile(file.name);
+      const reader = new FileReader();
+      reader.onload = ev => { csvContent = ev.target.result; };
+      reader.readAsText(file);
+    }
+  });
+
+  // ── Save / Test ────────────────────────────────────────────────────────────
+  async function saveSource() {
+    const btn      = document.getElementById("btn-save");
+    const resultEl = document.getElementById("test-result");
+
+    btn.disabled = true;
+    btn.textContent = selectedSource === "csv" ? "Importing…" :
+                      (selectedSource === "fresh" ? "Saving…" : "Testing…");
+    resultEl.style.display = "none";
+    resultEl.className = "test-result";
+
+    try {
+      const token = await currentUser.getIdToken();
+
+      // Build body
+      const body = {};
+      if (selectedSource === "fresh") {
+        body.source = "firestore";
+      } else if (selectedSource === "csv") {
+        if (!csvContent) throw new Error("Please choose a CSV file first.");
+        body.source     = "firestore";
+        body.csvContent = csvContent;
+      } else if (selectedSource === "notion") {
+        body.source     = "notion";
+        body.notionToken = document.getElementById("notion-token").value.trim();
+        body.notionDbId  = extractDbId(document.getElementById("notion-db").value.trim());
+        if (!body.notionToken || !body.notionDbId) throw new Error("Please fill in all fields.");
+      } else if (selectedSource === "sheets") {
+        body.source    = "sheets";
+        body.sheetsUrl = document.getElementById("sheets-url").value.trim();
+        if (!body.sheetsUrl) throw new Error("Please paste your Google Sheets URL.");
+      }
+
+      const res  = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Setup failed");
+
+      // Success message
+      let msg = "✅ Saved!";
+      if (selectedSource === "csv") {
+        msg = `✅ Imported ${data.count} guest${data.count !== 1 ? "s" : ""}. Credentials saved to your account.`;
+        setDoneText("Import complete! 🎉", `${data.count} guest${data.count !== 1 ? "s" : ""} loaded into your pipeline.`);
+      } else if (selectedSource === "notion" || selectedSource === "sheets") {
+        msg = `✅ Connected! Found ${data.count} guest${data.count !== 1 ? "s" : ""} in your database. Credentials saved to your account.`;
+        setDoneText("Connected!", `${data.count} guest${data.count !== 1 ? "s" : ""} synced from your ${selectedSource === "notion" ? "Notion database" : "Google Sheet"}.`);
+      } else {
+        setDoneText("You're all set! 🚀", "Your dashboard is ready. Add your first guest from the pipeline view.");
+      }
+
+      resultEl.className = "test-result ok";
+      resultEl.textContent = msg;
+      resultEl.style.display = "block";
+
+      // Short delay then jump to done
+      setTimeout(() => goStep(3), 900);
+
+    } catch (err) {
+      resultEl.className = "test-result err";
+      resultEl.textContent = "❌ " + err.message;
+      resultEl.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = selectedSource === "csv" ? "Import & Save" :
+                        (selectedSource === "fresh" ? "Save & Continue" : "Test & Save Connection");
+    }
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
   function extractDbId(raw) {
     const m = raw.match(/([a-f0-9]{32})/i);
     return m ? m[1] : raw.replace(/-/g,"");
   }
 
-  // ── Test + Save ────────────────────────────────────────────────────────────
-  // Sends credentials to the Cloud Function which tests the connection
-  // AND saves them to Firestore server-side.
-  async function testAndSave() {
-    const btn      = document.getElementById("btn-test");
-    const resultEl = document.getElementById("test-result");
-    const next     = document.getElementById("btn-next2");
-
-    btn.disabled = true;
-    btn.textContent = "Testing…";
-    resultEl.style.display = "none";
-    next.disabled = true;
-
-    try {
-      const token = await currentUser.getIdToken();
-
-      const body = { source: selectedSource };
-      if (selectedSource === "notion") {
-        body.notionToken = document.getElementById("notion-token").value.trim();
-        body.notionDbId  = extractDbId(document.getElementById("notion-db").value.trim());
-      } else {
-        body.sheetsUrl = document.getElementById("sheets-url").value.trim();
-      }
-
-      const res  = await fetch("/api/setup", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        resultEl.className = "test-result ok";
-        resultEl.textContent = `✅ Connected! Found ${data.count} guest${data.count !== 1 ? "s" : ""} in your database. Credentials saved to your account.`;
-        next.disabled = false;
-      } else {
-        throw new Error(data.error || "Connection failed");
-      }
-    } catch (err) {
-      resultEl.className = "test-result err";
-      resultEl.textContent = "❌ " + err.message;
-    }
-
-    resultEl.style.display = "block";
-    btn.disabled = false;
-    btn.textContent = "Test & Save Connection";
+  function setDoneText(title, sub) {
+    document.getElementById("done-title").textContent = title;
+    document.getElementById("done-sub").textContent   = sub;
   }
 </script>
 </body>
