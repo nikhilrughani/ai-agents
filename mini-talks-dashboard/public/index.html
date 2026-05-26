@@ -308,6 +308,47 @@
     .toast.success { border-color:var(--green); color:var(--green); }
     .toast.error   { border-color:var(--red);   color:var(--red); }
 
+    /* ── Search ── */
+    .search-wrap {
+      position: relative; margin: 20px 0 4px;
+    }
+    .search-input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 38px 10px 38px;
+      color: var(--text); font-size: .88rem; outline: none;
+      transition: border-color .15s; font-family: inherit;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--muted); }
+    .search-icon {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      color: var(--muted); font-size: .95rem; pointer-events: none;
+    }
+    .search-clear {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted); font-size: 1.1rem;
+      cursor: pointer; padding: 2px 6px; border-radius: 4px; line-height: 1;
+      display: none;
+    }
+    .search-clear:hover { color: var(--text); }
+
+    .search-results { display: none; margin-top: 10px; }
+    .search-results.visible { display: block; }
+    .sr-count { font-size: .73rem; color: var(--muted); margin-bottom: 10px; }
+    .sr-card {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 16px; margin-bottom: 8px; cursor: pointer;
+      transition: border-color .15s;
+    }
+    .sr-card:hover { border-color: var(--accent); }
+    .sr-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    }
+    .sr-name  { font-size: .88rem; font-weight: 600; flex: 1; min-width: 0; }
+    .sr-stage { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+    .sr-dates { font-size: .72rem; color: var(--muted); margin-top: 2px; }
+
     @media (max-width:600px) {
       .pipeline-grid { grid-template-columns:repeat(2,1fr); }
       .health-row    { grid-template-columns:repeat(2,1fr); }
@@ -434,6 +475,19 @@
 <main class="shell">
 
   <div class="error-banner" id="error-banner"></div>
+
+  <!-- Search -->
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input class="search-input" id="search-input" type="text"
+           placeholder="Search guests by name, source, notes…"
+           oninput="handleSearch(this.value)" />
+    <button class="search-clear" id="search-clear" onclick="clearSearch()" title="Clear search">✕</button>
+  </div>
+  <div class="search-results" id="search-results">
+    <div class="sr-count" id="sr-count"></div>
+    <div id="sr-list"></div>
+  </div>
 
   <!-- KPIs -->
   <div class="section-header">
@@ -952,8 +1006,72 @@ function startCountdown() {
   }, 1000);
 }
 
-// Keyboard: Escape closes modal
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+// ── Search ─────────────────────────────────────────────────────────────────
+function handleSearch(term) {
+  const clearBtn = document.getElementById("search-clear");
+  const resultsEl = document.getElementById("search-results");
+  clearBtn.style.display = term ? "block" : "none";
+
+  if (!term.trim()) {
+    resultsEl.classList.remove("visible");
+    return;
+  }
+  if (!data) return;
+
+  const q = term.toLowerCase().trim();
+  const matches = [];
+  for (const stage of data.stages) {
+    for (const g of stage.guests) {
+      if (
+        g.name.toLowerCase().includes(q) ||
+        (g.source  || "").toLowerCase().includes(q) ||
+        (g.notes   || "").toLowerCase().includes(q)
+      ) {
+        matches.push({ ...g, stageName: stage.name });
+      }
+    }
+  }
+
+  const count = matches.length;
+  document.getElementById("sr-count").textContent =
+    count === 0 ? "No guests found" : `${count} guest${count !== 1 ? "s" : ""} found`;
+
+  document.getElementById("sr-list").innerHTML = matches.map(g => {
+    const color = STAGE_COLORS[g.stageName] || "#fff";
+    const dates = [];
+    if (g.invitationDate) dates.push(`Invited ${fmtDate(g.invitationDate)}`);
+    if (g.briefingDate)   dates.push(`Briefing ${fmtDate(g.briefingDate)}`);
+    if (g.interviewDate)  dates.push(`Interview ${fmtDate(g.interviewDate)}`);
+    return `
+      <div class="sr-card" onclick="${data.readOnly ? "" : `openEditModal('${g.id}')`}">
+        <div class="sr-dot" style="background:${color};box-shadow:0 0 6px ${color}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="sr-name">${esc(g.name)}</div>
+          ${dates.length ? `<div class="sr-dates">${dates.join(" · ")}</div>` : ""}
+        </div>
+        <div class="sr-stage">${esc(g.stageName)}</div>
+      </div>`;
+  }).join("");
+
+  resultsEl.classList.add("visible");
+}
+
+function clearSearch() {
+  const input = document.getElementById("search-input");
+  input.value = "";
+  input.focus();
+  document.getElementById("search-clear").style.display = "none";
+  document.getElementById("search-results").classList.remove("visible");
+}
+
+// Keyboard: Escape clears search if active, else closes modal
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    const term = document.getElementById("search-input")?.value;
+    if (term) { clearSearch(); }
+    else { closeModal(); }
+  }
+});
 </script>
 </body>
 </html>
