@@ -143,7 +143,7 @@
         <div class="logo-sub">by <a href="https://nikhilrughani.com" target="_blank" style="color:#4bb8d0;text-decoration:none;font-weight:600">Nikhil Rughani</a></div>
       </div>
     </div>
-    <p>Choose how you want to manage your guest data and your pipeline will be live in seconds.</p>
+    <p id="card-subtitle">Choose how you want to manage your guest data and your pipeline will be live in seconds.</p>
   </div>
 
   <!-- Logged-in user strip -->
@@ -152,8 +152,38 @@
     <a onclick="signOut()">Sign Out</a>
   </div>
 
-  <!-- Step tabs -->
-  <div class="steps">
+  <!-- ── Settings panel (shown when already configured) ── -->
+  <div id="settings-panel" style="display:none;padding:26px 30px">
+
+    <div class="callout" style="border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.05);margin-bottom:20px">
+      <strong style="color:var(--green)">✓ Pipeline active</strong> &nbsp;·&nbsp;
+      <span id="conf-count-label">0 guests</span> in your pipeline.
+      Data is stored securely in Firebase.
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-primary" onclick="startImportMore()">＋ Import More Guests</button>
+      <button class="btn btn-secondary" onclick="window.location.href='/'">← Back to Dashboard</button>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin-top:24px;padding-top:18px">
+      <div style="font-size:.7rem;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+        Danger Zone
+      </div>
+      <button class="btn" id="btn-clear" onclick="clearAllData()"
+        style="width:100%;background:none;border:1px solid rgba(248,113,113,.35);color:var(--red)">
+        🗑 Clear All Guest Data
+      </button>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:7px;line-height:1.4">
+        Permanently deletes every guest from your pipeline. Cannot be undone.<br>
+        Your account stays active — you can re-import afterwards.
+      </p>
+    </div>
+
+  </div>
+
+  <!-- Step tabs (hidden in settings mode) -->
+  <div class="steps" id="steps-row">
     <div class="step active" id="tab-1">1 · Data Source</div>
     <div class="step"        id="tab-2">2 · Configure</div>
     <div class="step"        id="tab-3">3 · Done</div>
@@ -191,6 +221,7 @@
 
     </div>
     <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-step1-cancel" onclick="setMode('settings')" style="display:none">← Cancel</button>
       <button class="btn btn-primary" id="btn-step1-next" onclick="step1Next()">Next →</button>
     </div>
   </div>
@@ -312,21 +343,104 @@
 
 <script>
   const auth = firebase.auth();
-  let currentUser = null;
+  let currentUser  = null;
   let selectedSource = "fresh"; // fresh | csv | notion | sheets
-  let csvContent = null;        // raw text of the uploaded CSV
+  let csvContent   = null;      // raw text of the uploaded CSV
+  let addingMore   = false;     // true when importing into an already-configured account
 
   // ── Auth gate ──────────────────────────────────────────────────────────────
-  auth.onAuthStateChanged(user => {
+  auth.onAuthStateChanged(async user => {
     if (!user) {
       window.location.replace("/login.html");
       return;
     }
     currentUser = user;
     document.getElementById("user-email").textContent = user.email;
+
+    // Check if this account is already set up
+    try {
+      const token = await user.getIdToken();
+      const res   = await fetch("/api/status", {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const status = await res.json();
+        if (status.configured) {
+          const n = status.count;
+          document.getElementById("conf-count-label").textContent =
+            `${n} guest${n !== 1 ? "s" : ""}`;
+          document.getElementById("init-overlay").classList.add("hidden");
+          document.getElementById("main-card").style.display = "block";
+          setMode("settings");
+          return;
+        }
+      }
+    } catch (_) {}
+
     document.getElementById("init-overlay").classList.add("hidden");
     document.getElementById("main-card").style.display = "block";
+    setMode("wizard");
   });
+
+  // ── Mode switching ─────────────────────────────────────────────────────────
+  function setMode(mode) {
+    const isSettings = mode === "settings";
+    document.getElementById("settings-panel").style.display = isSettings ? "block" : "none";
+    document.getElementById("steps-row").style.display      = isSettings ? "none"  : "flex";
+    document.getElementById("panel-1").style.display        = isSettings ? "none"  : "";
+    document.getElementById("panel-2").style.display        = "none";
+    document.getElementById("panel-3").style.display        = "none";
+    document.getElementById("card-subtitle").textContent    = isSettings
+      ? "Manage your guest data and account settings."
+      : addingMore
+        ? "Choose a source to import more guests into your pipeline."
+        : "Choose how you want to manage your guest data and your pipeline will be live in seconds.";
+    if (!isSettings) {
+      document.getElementById("panel-1").classList.add("active");
+      document.getElementById("tab-1").classList.add("active");
+      // Hide "Start Fresh" when adding to existing — it's a no-op
+      document.getElementById("src-fresh").style.display = addingMore ? "none" : "";
+      // Show cancel button when in add-more mode
+      document.getElementById("btn-step1-cancel").style.display = addingMore ? "" : "none";
+      // Default to CSV when adding more
+      if (addingMore) selectSource("csv");
+    }
+  }
+
+  // Called when "Import More Guests" is clicked from settings panel
+  function startImportMore() {
+    addingMore = true;
+    setMode("wizard");
+  }
+
+  // ── Clear all guest data ───────────────────────────────────────────────────
+  async function clearAllData() {
+    if (!confirm("This will permanently delete ALL guests from your pipeline.\n\nThis cannot be undone. Continue?")) return;
+
+    const btn = document.getElementById("btn-clear");
+    btn.disabled = true;
+    btn.textContent = "Clearing…";
+
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch("/api/guests", {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Failed to clear data");
+
+      // Stay on setup in "add" mode so they can reimport right away
+      addingMore = false;
+      document.getElementById("conf-count-label").textContent = "0 guests";
+      document.getElementById("init-overlay").classList.add("hidden"); // in case
+      setMode("wizard");
+    } catch (err) {
+      alert("Error: " + err.message);
+      btn.disabled = false;
+      btn.textContent = "🗑 Clear All Guest Data";
+    }
+  }
 
   // ── Sign out ───────────────────────────────────────────────────────────────
   async function signOut() {
@@ -394,8 +508,12 @@
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "Setup failed");
-      setDoneText("You're all set! 🚀", "Your dashboard is ready. Add your first guest from the pipeline view.");
-      goStep(3);
+      if (addingMore) {
+        window.location.href = "/";
+      } else {
+        setDoneText("You're all set! 🚀", "Your dashboard is ready. Add your first guest from the pipeline view.");
+        goStep(3);
+      }
     } catch (err) {
       btn.disabled = false;
       btn.textContent = "Next →";
@@ -501,8 +619,14 @@
       resultEl.textContent = msg;
       resultEl.style.display = "block";
 
-      // Short delay then jump to done
-      setTimeout(() => goStep(3), 900);
+      // Short delay then redirect to dashboard (if adding more) or show done screen
+      setTimeout(() => {
+        if (addingMore) {
+          window.location.href = "/";
+        } else {
+          goStep(3);
+        }
+      }, 900);
 
     } catch (err) {
       resultEl.className = "test-result err";

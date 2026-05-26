@@ -84,19 +84,27 @@ async function fsSet(docPath, data, token) {
   return docToObj(await res.json());
 }
 
-// LIST documents in a collection (up to 300)
+// LIST documents in a collection — paginates automatically
 async function fsList(collPath, token) {
-  const res = await fetch(`${FS()}/${collPath}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status === 404) return [];
-  if (!res.ok) throw new Error(`Firestore LIST failed (${res.status})`);
-  const body = await res.json();
-  if (!body.documents) return [];
-  return body.documents.map(doc => ({
-    ...docToObj(doc),
-    id: doc.name.split("/").pop(),
-  }));
+  const docs = [];
+  let pageToken = null;
+  do {
+    const qs  = pageToken ? `?pageToken=${encodeURIComponent(pageToken)}` : "";
+    const res = await fetch(`${FS()}/${collPath}${qs}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 404) break;
+    if (!res.ok) throw new Error(`Firestore LIST failed (${res.status})`);
+    const body = await res.json();
+    if (body.documents) {
+      docs.push(...body.documents.map(doc => ({
+        ...docToObj(doc),
+        id: doc.name.split("/").pop(),
+      })));
+    }
+    pageToken = body.nextPageToken || null;
+  } while (pageToken);
+  return docs;
 }
 
 // CREATE a document with auto-generated ID
@@ -122,6 +130,15 @@ async function fsUpdate(docPath, data, token) {
   });
   if (!res.ok) throw new Error(`Firestore UPDATE failed (${res.status})`);
   return docToObj(await res.json());
+}
+
+// DELETE a document (404 is treated as success)
+async function fsDelete(docPath, token) {
+  const res = await fetch(`${FS()}/${docPath}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`Firestore DELETE failed (${res.status})`);
 }
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
@@ -513,6 +530,39 @@ app.patch("/api/guests/:id", requireAuth, async (req, res) => {
     res.json(notionPageToGuest(page));
   } catch (err) {
     console.error("Update error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Status: is this user configured? How many guests do they have?
+app.get("/api/status", requireAuth, async (req, res) => {
+  const configured = !!req.creds.source;
+  let count = 0;
+  if (configured) {
+    try { count = (await fsList(`users/${req.uid}/guests`, req.idToken)).length; } catch (_) {}
+  }
+  res.json({ configured, count });
+});
+
+// Delete a single guest
+app.delete("/api/guests/:id", requireAuth, async (req, res) => {
+  try {
+    await fsDelete(`users/${req.uid}/guests/${req.params.id}`, req.idToken);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Clear ALL guests (keeps credentials — use before a re-import)
+app.delete("/api/guests", requireAuth, async (req, res) => {
+  try {
+    const docs = await fsList(`users/${req.uid}/guests`, req.idToken);
+    await Promise.all(docs.map(d => fsDelete(`users/${req.uid}/guests/${d.id}`, req.idToken)));
+    res.json({ ok: true, deleted: docs.length });
+  } catch (err) {
+    console.error("Clear error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

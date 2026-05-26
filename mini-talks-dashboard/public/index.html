@@ -75,6 +75,40 @@
     }
     .btn-export:hover { border-color: var(--green); color: var(--green); }
     .btn-export:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Delete button */
+    .btn-delete {
+      padding: 8px 16px; border-radius: 8px; font-size: .82rem; cursor: pointer;
+      background: none; border: 1px solid rgba(248,113,113,.35); color: var(--red);
+      transition: all .15s;
+    }
+    .btn-delete:hover { background: rgba(248,113,113,.1); border-color: var(--red); }
+    .btn-delete:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Search */
+    .search-wrap { margin-bottom: 12px; position: relative; }
+    .search-input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 36px 9px 12px; color: var(--text); font-size: .88rem;
+      outline: none; transition: border-color .15s; font-family: inherit;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-clear {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted); font-size: 1.1rem;
+      cursor: pointer; line-height: 1; padding: 0;
+    }
+    .search-clear:hover { color: var(--text); }
+    .search-result-card {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 11px 16px; cursor: pointer; transition: border-color .15s; margin-bottom: 6px;
+    }
+    .search-result-card:hover { border-color: var(--accent); }
+    .sr-stage-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .sr-name  { font-size: .88rem; font-weight: 600; flex: 1; min-width: 0; }
+    .sr-stage { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+    .sr-dates { font-size: .72rem; color: var(--muted); white-space: nowrap; }
     .btn-signout {
       background: none; border: 1px solid var(--border); border-radius: 8px;
       padding: 7px 12px; font-size: 0.75rem; color: var(--muted); cursor: pointer;
@@ -410,6 +444,8 @@
 
     </div>
     <div class="modal-footer">
+      <button class="btn-delete" id="btn-delete" onclick="deleteGuest()" style="display:none">🗑 Delete</button>
+      <div style="flex:1"></div>
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" id="btn-save" onclick="saveGuest()">Save Guest</button>
     </div>
@@ -454,6 +490,16 @@
   <div class="section-header" style="margin-top:32px">
     <h2>Stages</h2><div class="line"></div>
   </div>
+
+  <!-- Search (shown once data loads) -->
+  <div class="search-wrap" id="search-wrap" style="display:none">
+    <input class="search-input" id="search-input" type="text"
+      placeholder="🔍  Search guests by name or source…"
+      oninput="handleSearch(this.value)" />
+    <button class="search-clear" id="search-clear" onclick="clearSearch()" style="display:none">×</button>
+  </div>
+  <div id="search-results"></div>
+
   <div class="pipeline-grid" id="pipeline-grid"></div>
   <div class="drawer" id="stage-drawer">
     <div class="drawer-header" id="drawer-title"></div>
@@ -766,6 +812,7 @@ function openAddModal() {
   editingGuest = null;
   document.getElementById("modal-title").textContent = "Add Guest";
   document.getElementById("btn-save").textContent = "Add Guest";
+  document.getElementById("btn-delete").style.display = "none";
   document.getElementById("quick-actions-row").style.display = "none";
   clearModalForm();
   applyModalLocks(null);
@@ -781,6 +828,9 @@ function openEditModal(guestId) {
 
   document.getElementById("modal-title").textContent = "Edit — " + guest.name;
   document.getElementById("btn-save").textContent = "Save Changes";
+  document.getElementById("btn-delete").style.display = "";
+  document.getElementById("btn-delete").disabled = false;
+  document.getElementById("btn-delete").textContent = "🗑 Delete";
   document.getElementById("modal-error").style.display = "none";
   applyModalLocks(guest.stage);
 
@@ -917,6 +967,11 @@ async function fetchDashboard() {
 
     // Show/hide Add Guest based on read-only status
     document.getElementById("btn-add").style.display = data.readOnly ? "none" : "";
+    // Show search once data is present
+    document.getElementById("search-wrap").style.display = data.totalGuests > 0 ? "" : "none";
+    // Re-run search if active
+    const searchTerm = document.getElementById("search-input").value;
+    if (searchTerm) handleSearch(searchTerm);
 
     errEl.style.display = "none";
     renderHealth(data);
@@ -961,6 +1016,99 @@ function startCountdown() {
   }, 1000);
 }
 
+// ── Delete guest ───────────────────────────────────────────────────────────
+async function deleteGuest() {
+  if (!editingGuest) return;
+  const name = editingGuest.name;
+  if (!confirm(`Remove "${name}" from your pipeline?\n\nThis cannot be undone.`)) return;
+
+  const btn = document.getElementById("btn-delete");
+  btn.disabled = true;
+  btn.textContent = "Deleting…";
+
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/guests/${editingGuest.id}`, { method: "DELETE", headers });
+    if (!res.ok) throw new Error((await res.json()).error || "Delete failed");
+    closeModal();
+    showToast(`✓ ${name} removed from pipeline`);
+    await fetchDashboard();
+  } catch (err) {
+    showToast("Error: " + err.message, "error");
+    btn.disabled = false;
+    btn.textContent = "🗑 Delete";
+  }
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+let searchActive = false;
+
+function handleSearch(term) {
+  const t = term.trim().toLowerCase();
+  const resultsEl = document.getElementById("search-results");
+  const gridEl    = document.getElementById("pipeline-grid");
+  const clearBtn  = document.getElementById("search-clear");
+  const drawerEl  = document.getElementById("stage-drawer");
+
+  clearBtn.style.display = t ? "" : "none";
+
+  if (!t || !data) {
+    searchActive = false;
+    resultsEl.innerHTML = "";
+    gridEl.style.opacity = "1";
+    gridEl.style.pointerEvents = "";
+    return;
+  }
+
+  searchActive = true;
+  gridEl.style.opacity = "0.25";
+  gridEl.style.pointerEvents = "none";
+  drawerEl.classList.remove("open");
+  activeStage = null;
+
+  // Collect all guests across all stages
+  const matches = [];
+  for (const stage of data.stages) {
+    for (const g of stage.guests) {
+      if (
+        g.name.toLowerCase().includes(t) ||
+        (g.source || "").toLowerCase().includes(t) ||
+        (g.notes  || "").toLowerCase().includes(t)
+      ) {
+        matches.push({ ...g, stageName: stage.name });
+      }
+    }
+  }
+
+  if (!matches.length) {
+    resultsEl.innerHTML = `<div class="no-overdue" style="margin-top:0">No guests match "<em>${esc(term)}</em>"</div>`;
+    return;
+  }
+
+  resultsEl.innerHTML = matches.map(g => {
+    const color = STAGE_COLORS[g.stageName] || "#fff";
+    const dates = [];
+    if (g.briefingDate)  dates.push(`Briefing ${fmtDate(g.briefingDate)}`);
+    if (g.interviewDate) dates.push(`Interview ${fmtDate(g.interviewDate)}`);
+    return `
+      <div class="search-result-card" onclick="openEditModal('${g.id}')">
+        <div class="sr-stage-dot" style="background:${color};box-shadow:0 0 6px ${color}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="sr-name">${esc(g.name)}</div>
+          <div class="sr-stage" style="color:${color};margin-top:2px">${g.stageName}</div>
+        </div>
+        ${dates.length ? `<div class="sr-dates">${dates.join(" · ")}</div>` : ""}
+      </div>`;
+  }).join("");
+}
+
+function clearSearch() {
+  const input = document.getElementById("search-input");
+  input.value = "";
+  handleSearch("");
+  input.focus();
+}
+
 // ── Export CSV ─────────────────────────────────────────────────────────────
 async function exportCSV() {
   const btn = document.getElementById("btn-export");
@@ -992,8 +1140,16 @@ async function exportCSV() {
   }
 }
 
-// Keyboard: Escape closes modal
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+// Keyboard: Escape closes modal or clears search
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    if (document.getElementById("modal-overlay").classList.contains("open")) {
+      closeModal();
+    } else if (document.getElementById("search-input").value) {
+      clearSearch();
+    }
+  }
+});
 </script>
 </body>
 </html>
