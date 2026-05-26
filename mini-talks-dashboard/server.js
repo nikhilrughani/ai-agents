@@ -367,6 +367,10 @@ app.post("/api/setup", requireAuth, async (req, res) => {
 
 // Dashboard data
 app.get("/api/dashboard", requireAuth, async (req, res) => {
+  // No credentials saved yet → tell the client to redirect to setup
+  if (!req.creds.source && !req.creds.notionToken && !req.creds.sheetsUrl) {
+    return res.status(400).json({ error: "No data source configured." });
+  }
   try {
     const guests = await fetchGuests(req.creds);
     res.json(buildDashboard(guests, req.creds.source));
