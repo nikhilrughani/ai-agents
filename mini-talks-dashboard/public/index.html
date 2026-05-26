@@ -459,10 +459,11 @@
 
 </main>
 
-<!-- Firebase SDK (auto-configured by Firebase Hosting) -->
-<script src="/__/firebase/10.12.0/firebase-app-compat.js"></script>
-<script src="/__/firebase/10.12.0/firebase-auth-compat.js"></script>
-<script src="/__/firebase/init.js"></script>
+<!-- Firebase SDK — loaded from Google's CDN, configured via firebase-config.js -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="/firebase-config.js"></script>
+<script>firebase.initializeApp(window.firebaseConfig);</script>
 
 <script>
 // ── Firebase Auth ──────────────────────────────────────────────────────────

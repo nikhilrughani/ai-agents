@@ -1,20 +1,24 @@
 # 🎙️ Mini-Talks Pipeline Dashboard
 
-Real-time pipeline dashboard for the Mini-Talks talk-show format. Built on **Firebase** so every subscriber gets their own secure login — you can sell access and each user connects their own Notion database.
+Real-time pipeline dashboard for the Mini-Talks talk-show format. Every subscriber gets their own secure login — you can sell access and each user connects their own Notion database.
 
 Auto-refreshes every 60 seconds. Zero ongoing maintenance.
+
+> **Free tier:** Uses **Vercel** (free) for the Express API and **Firebase** free tier (Auth + Firestore) for multi-user logins. No Firebase paid plan or credit card needed.
 
 ---
 
 ## What's inside
 
-| Layer | Tech | Purpose |
-|---|---|---|
-| Hosting | Firebase Hosting | Serves the HTML/CSS/JS frontend |
-| API | Firebase Cloud Functions (Node.js) | Proxies Notion / Sheets API calls, enforces auth |
-| Auth | Firebase Authentication | Per-subscriber email + password login |
-| Data | Google Firestore | Stores per-user Notion credentials securely |
-| Source | Notion API **or** Google Sheets | Where your guest data lives |
+| Layer | Tech | Cost | Purpose |
+|---|---|---|---|
+| Hosting + API | **Vercel** (free) | $0 | Serves the app and Express API as serverless functions |
+| Auth | **Firebase Authentication** (free Spark plan) | $0 | Per-subscriber email + password login |
+| Credentials | **Google Firestore** (free Spark plan) | $0 | Stores per-user Notion tokens securely |
+| Source | Notion API **or** Google Sheets | $0 | Where your guest data lives |
+
+> **Why Vercel + Firebase instead of Firebase-only?**  
+> Firebase Cloud Functions require the Blaze (paid) plan. Vercel's serverless functions are free. Firebase Auth and Firestore remain on the free Spark plan — no billing account or credit card needed.
 
 ---
 
@@ -33,69 +37,98 @@ Outreach Sent → Briefing Booked → Briefing Done → Interview Booked → Int
 
 ---
 
-## First-time setup (5 minutes)
+## Deploy in 4 steps (everything free)
 
-### 1. Create a Firebase project
+### Step 1 — Create Firebase project (Auth + Firestore only — free Spark plan)
 
 1. Go to [console.firebase.google.com](https://console.firebase.google.com) → **Add project**
-2. Name it (e.g. `mini-talks-dashboard`)
+2. Name it (e.g. `mini-talks-dashboard`) — **stay on the free Spark plan, no upgrade needed**
 
-### 2. Enable services in the Firebase console
+Enable two services in the console (both free):
 
-| Console section | What to enable |
+| Console section | Action |
 |---|---|
-| **Authentication → Sign-in method** | Email/Password → Enable |
-| **Firestore Database** | Create database → Start in **production mode** → choose region |
-| **Functions** | Upgrade to **Blaze plan** (pay-as-you-go — free tier covers typical usage) |
+| **Authentication → Sign-in method** | Email/Password → **Enable** |
+| **Firestore Database** | Create database → **Production mode** → choose a region |
 
-### 3. Install Firebase CLI
+### Step 2 — Add Firebase config to the app
+
+The client config is **not secret** — it's safe to put in your source code. Firebase security rules protect your data, not the config.
+
+1. Firebase Console → ⚙️ **Project settings** → scroll to **Your apps**
+2. Click **</>** (Web app) → give it a nickname → click **Register app**
+3. Copy the `firebaseConfig` values
+4. Paste them into **`public/firebase-config.js`**:
+
+```js
+window.firebaseConfig = {
+  apiKey:            "AIzaSy...",
+  authDomain:        "mini-talks-dashboard.firebaseapp.com",
+  projectId:         "mini-talks-dashboard",
+  storageBucket:     "mini-talks-dashboard.firebasestorage.app",
+  messagingSenderId: "123456789",
+  appId:             "1:123456789:web:abc123",
+};
+```
+
+### Step 3 — Generate a Firebase service account (server secret)
+
+The server needs this to verify login tokens and save credentials to Firestore.
+
+1. Firebase Console → ⚙️ **Project settings** → **Service accounts** tab
+2. Click **Generate new private key** → **Generate key** → download the JSON file
+3. Open the JSON file in a text editor → **select all and copy** (it's one JSON object)
+
+You'll paste this in Step 4 as `FIREBASE_SERVICE_ACCOUNT`.
+
+> Keep this JSON private. Do not commit it to git. The `.gitignore` already excludes `.env`.
+
+### Step 4 — Deploy to Vercel (free)
 
 ```bash
-npm install -g firebase-tools
-firebase login
+# Install Vercel CLI if you don't have it
+npm install -g vercel
+
+# From the mini-talks-dashboard folder:
+npm install
+vercel
 ```
 
-### 4. Wire up your project ID
+When Vercel asks if you want to set up environment variables, add:
 
-Edit `.firebaserc` — replace `REPLACE_WITH_YOUR_FIREBASE_PROJECT_ID`:
+| Key | Value |
+|---|---|
+| `FIREBASE_SERVICE_ACCOUNT` | Paste the entire service account JSON |
 
-```json
-{
-  "projects": {
-    "default": "your-firebase-project-id"
-  }
-}
+Your live URL appears at the end:
+```
+✅  Production: https://mini-talks-dashboard-xxx.vercel.app
 ```
 
-### 5. Install function dependencies
+#### Alternative: deploy via Vercel dashboard (no CLI needed)
+
+1. Push this repo to GitHub
+2. Go to [vercel.com](https://vercel.com) → **Add New → Project** → import the repo
+3. Set **Root Directory** to `mini-talks-dashboard`
+4. Under **Environment Variables**, add `FIREBASE_SERVICE_ACCOUNT` → paste the JSON
+5. Click **Deploy**
+
+#### Add/update env vars later
 
 ```bash
-cd functions && npm install && cd ..
-```
-
-### 6. Deploy everything
-
-```bash
-firebase deploy
-```
-
-Your app URL prints at the end:
-```
-✔  Hosting URL: https://your-project-id.web.app
+vercel env add FIREBASE_SERVICE_ACCOUNT
 ```
 
 ---
 
 ## User flow
 
-1. User visits your URL → if not logged in, redirected to **`/login.html`**
+1. User visits your Vercel URL → if not logged in, redirected to **`/login.html`**
 2. Sign up with email + password (or sign in if returning)
 3. First visit after signup → redirected to **`/setup.html`** (no Notion credentials yet)
 4. Setup wizard: choose Notion or Google Sheets → enter credentials → **Test & Save**
-5. Redirected to the **dashboard** — auto-refreshes every 60 seconds
-
-Credentials are saved to `Firestore: users/{uid}/private/credentials`.  
-Firestore rules ensure only the account owner can access their own data.
+5. Credentials saved securely to Firestore → redirected to the **dashboard**
+6. Dashboard auto-refreshes every 60 seconds
 
 ---
 
@@ -154,28 +187,34 @@ Google Sheets is read-only — the "Add Guest" button is hidden in this mode.
 
 ---
 
-## Local development
-
-```bash
-firebase emulators:start
-# Open http://localhost:5000
-```
-
-The emulator UI (Auth + Firestore inspector) is at `http://localhost:4000`.
-
----
-
 ## Selling subscriptions
 
 Each subscriber gets their own Firebase Auth account.
 
 | Option | How |
 |---|---|
-| **Self-service** | Subscribers sign up at `/login.html` — free |
-| **Invite only** | Disable public signups in Firebase Auth → create accounts manually |
-| **Paid gating** | Add a Stripe webhook that calls Firebase Admin to create accounts after payment |
+| **Self-service** | Subscribers sign up at `/login.html` — works immediately |
+| **Invite only** | Disable public signups in Firebase Auth → create accounts manually in the console |
+| **Paid gating** | Add a Stripe webhook that calls Firebase Admin SDK to create accounts after payment |
 
-Subscriber Notion tokens never leave their own Firestore document — not even you as admin can read them.
+Subscriber Notion tokens are stored in their own Firestore document — only the server (via Admin SDK) and the subscriber themselves can access it.
+
+---
+
+## Local development (no Firebase needed)
+
+For local dev without a Firebase project, add a `.env` file:
+
+```bash
+cp .env.example .env
+# Fill in NOTION_TOKEN and NOTION_DATABASE_ID
+npm run dev
+# Open http://localhost:3000
+```
+
+When `FIREBASE_SERVICE_ACCOUNT` is not set, the server skips auth and reads credentials from `.env` directly. The browser pages will show an error until you also fill in `public/firebase-config.js` (required for the login UI).
+
+To test the full auth flow locally, set `FIREBASE_SERVICE_ACCOUNT` in `.env` and fill in `public/firebase-config.js`.
 
 ---
 
@@ -189,34 +228,26 @@ Subscriber Notion tokens never leave their own Firestore document — not even y
 
 ---
 
-## Cost estimate (Firebase Blaze plan)
-
-For 50 subscribers checking the dashboard a few times a day — **effectively $0/month**.
-
-| Service | Free tier | Typical cost |
-|---|---|---|
-| Hosting | 10 GB / 360 MB/day | ~$0 |
-| Functions | 2M invocations/month | ~$0–$1 |
-| Firestore | 1 GB / 50K reads/day | ~$0 |
-| Auth | Unlimited MAUs | $0 |
-
----
-
 ## File structure
 
 ```
 mini-talks-dashboard/
-├── public/                  ← Firebase Hosting (frontend)
-│   ├── index.html           ← Dashboard (auth-gated, auto-refresh)
-│   ├── login.html           ← Sign in / Sign up / Password reset
-│   └── setup.html           ← Data source credentials wizard
+├── public/                    ← Static frontend
+│   ├── index.html             ← Dashboard (auth-gated, auto-refresh)
+│   ├── login.html             ← Sign in / Sign up / Password reset
+│   ├── setup.html             ← Data source credentials wizard
+│   └── firebase-config.js    ← ← FILL THIS IN (your Firebase project values)
 │
-├── functions/               ← Cloud Functions (Node.js API)
-│   ├── index.js             ← /api/dashboard · /api/guests · /api/setup
+├── server.js                  ← Express API (Notion proxy + auth verification)
+├── package.json               ← Dependencies inc. firebase-admin
+├── vercel.json                ← Vercel deployment config
+│
+├── functions/                 ← Firebase Functions version (needs Blaze plan)
+│   ├── index.js               ← (alternative if you upgrade to Blaze later)
 │   └── package.json
 │
-├── firebase.json            ← Hosting + Functions + Emulator config
-├── .firebaserc              ← Your Firebase project ID ← EDIT THIS
-├── firestore.rules          ← Per-user data isolation
-└── firestore.indexes.json
+├── firebase.json              ← Firebase config (Hosting + Functions if used)
+├── .firebaserc                ← Firebase project ID
+├── firestore.rules            ← Per-user data isolation rules
+└── .env.example               ← Copy to .env for local dev
 ```
