@@ -350,10 +350,32 @@
     .toast.success { border-color:var(--green); color:var(--green); }
     .toast.error   { border-color:var(--red);   color:var(--red); }
 
+    @media (max-width:700px) {
+      /* Header: stack left/right on narrow screens */
+      .header-inner { flex-direction:column; align-items:flex-start; gap:8px; padding:12px 16px; }
+      .header-right { width:100%; flex-wrap:wrap; gap:6px; }
+      /* Hide less-essential header items on mobile */
+      #last-updated { display:none; }
+      .refresh-badge { display:none; }
+      /* Tighten buttons */
+      .btn-add    { padding:7px 12px; font-size:.8rem; }
+      .btn-export { padding:6px 10px; font-size:.75rem; }
+      .btn-signout{ padding:6px 10px; font-size:.72rem; }
+    }
     @media (max-width:600px) {
       .pipeline-grid { grid-template-columns:repeat(2,1fr); }
       .health-row    { grid-template-columns:repeat(2,1fr); }
       .field-row     { grid-template-columns:1fr; }
+      /* Tighter shell padding */
+      .shell { padding:0 12px; }
+      header { padding:12px 16px; }
+    }
+    @media (max-width:400px) {
+      .pipeline-grid { grid-template-columns:1fr 1fr; }
+      .health-row    { grid-template-columns:1fr 1fr; }
+      /* Very small: hide export button (still accessible via settings) */
+      .btn-export { display:none; }
+      .subtitle   { display:none; }
     }
   </style>
 </head>
@@ -481,13 +503,13 @@
   <div class="error-banner" id="error-banner"></div>
 
   <!-- KPIs -->
-  <div class="section-header">
+  <div class="section-header" id="sh-health">
     <h2>Pipeline Health</h2><div class="line"></div>
   </div>
   <div class="health-row" id="health-row"></div>
 
   <!-- Stages -->
-  <div class="section-header" style="margin-top:32px">
+  <div class="section-header" id="sh-stages" style="margin-top:32px">
     <h2>Stages</h2><div class="line"></div>
   </div>
 
@@ -507,7 +529,7 @@
   </div>
 
   <!-- Overdue -->
-  <div class="section-header" style="margin-top:32px">
+  <div class="section-header" id="sh-overdue" style="margin-top:32px">
     <h2>⚠️ Needs Attention</h2><div class="line"></div>
   </div>
   <div class="overdue-list" id="overdue-list"></div>
@@ -614,6 +636,48 @@ function showToast(msg, type = "success") {
   t.textContent = msg;
   t.className = `toast ${type} show`;
   setTimeout(() => t.classList.remove("show"), 2800);
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────
+function renderEmptyState() {
+  // Hide health + overdue sections — no useful data to show
+  document.getElementById("sh-health").style.display   = "none";
+  document.getElementById("health-row").innerHTML       = "";
+  document.getElementById("sh-overdue").style.display  = "none";
+  document.getElementById("overdue-list").innerHTML     = "";
+  document.getElementById("stage-drawer").classList.remove("open");
+  document.getElementById("search-wrap").style.display  = "none";
+  activeStage = null;
+
+  document.getElementById("pipeline-grid").innerHTML = `
+    <div style="grid-column:1/-1;display:flex;flex-direction:column;align-items:center;
+                padding:52px 20px 44px;text-align:center">
+      <div style="font-size:3.8rem;margin-bottom:18px;line-height:1">🎙️</div>
+      <div style="font-size:1.15rem;font-weight:700;margin-bottom:8px">Your pipeline is empty</div>
+      <div style="font-size:.85rem;color:var(--muted);line-height:1.6;margin-bottom:28px;max-width:320px">
+        Add your first guest to start tracking your Mini-Talks pipeline from
+        first outreach through to published.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:240px">
+        <button class="btn-add" onclick="openAddModal()"
+          style="display:flex;justify-content:center;width:100%">
+          ＋ Add Your First Guest
+        </button>
+        <button onclick="window.location='/setup.html'"
+          style="background:none;border:1px solid var(--border);border-radius:8px;
+                 padding:9px;color:var(--muted);font-size:.82rem;cursor:pointer;
+                 transition:all .15s;font-family:inherit;width:100%"
+          onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+          ⚙️ Import from CSV / Notion / Sheets
+        </button>
+      </div>
+    </div>`;
+}
+
+function restoreSectionHeaders() {
+  document.getElementById("sh-health").style.display  = "";
+  document.getElementById("sh-overdue").style.display = "";
 }
 
 // ── Render ────────────────────────────────────────────────────────────────
@@ -967,17 +1031,21 @@ async function fetchDashboard() {
 
     // Show/hide Add Guest based on read-only status
     document.getElementById("btn-add").style.display = data.readOnly ? "none" : "";
-    // Show search once data is present
-    document.getElementById("search-wrap").style.display = data.totalGuests > 0 ? "" : "none";
-    // Re-run search if active
-    const searchTerm = document.getElementById("search-input").value;
-    if (searchTerm) handleSearch(searchTerm);
-
     errEl.style.display = "none";
-    renderHealth(data);
-    renderPipeline(data);
-    renderOverdue(data);
-    if (activeStage) renderDrawer(activeStage);
+
+    if (data.totalGuests === 0) {
+      renderEmptyState();
+    } else {
+      restoreSectionHeaders();
+      renderHealth(data);
+      renderPipeline(data);
+      renderOverdue(data);
+      if (activeStage) renderDrawer(activeStage);
+      // Show search bar and re-run if active
+      document.getElementById("search-wrap").style.display = "";
+      const searchTerm = document.getElementById("search-input").value;
+      if (searchTerm) handleSearch(searchTerm);
+    }
 
     const ts = new Date(data.lastUpdated);
     document.getElementById("last-updated").textContent =
