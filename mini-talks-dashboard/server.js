@@ -148,6 +148,13 @@ async function requireAuth(req, res, next) {
       req.uid     = payload.sub;
       req.idToken = token;
       req.creds   = (await fsGet(`users/${req.uid}/private/credentials`, token)) || {};
+      // Migration: accounts imported from Notion/Sheets before v2 have source="notion"|"sheets"
+      // All guest data is in Firestore now — treat them as "firestore" source
+      if (req.creds.source === "notion" || req.creds.source === "sheets") {
+        req.creds = { source: "firestore" };
+        // Silently fix the stored credentials so this only runs once
+        fsSet(`users/${req.uid}/private/credentials`, { source: "firestore" }, token).catch(() => {});
+      }
       return next();
     } catch (err) {
       console.error("Auth error:", err.message);
@@ -491,9 +498,9 @@ app.post("/api/setup", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Unknown source type." });
     }
 
-    // Always save "firestore" as the stored source — external creds are never persisted
+    // Always save "firestore" as the stored source — external creds are never persisted after import
     if (FIREBASE_PROJECT_ID && req.idToken) {
-      await fsSet(`users/${req.uid}/private/credentials`, creds, req.idToken);
+      await fsSet(`users/${req.uid}/private/credentials`, { source: "firestore" }, req.idToken);
     }
     res.json({ ok: true, count });
   } catch (err) {
