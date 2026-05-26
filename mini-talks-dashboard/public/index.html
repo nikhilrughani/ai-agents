@@ -67,48 +67,6 @@
       padding: 7px 10px; font-size: 1rem; cursor: pointer; transition: border-color .15s; line-height:1;
     }
     .btn-settings:hover { border-color: var(--accent); }
-    .btn-export {
-      display: flex; align-items: center; gap: 5px;
-      background: none; border: 1px solid var(--border); border-radius: 8px;
-      padding: 7px 12px; font-size: 0.78rem; font-weight: 600; color: var(--muted);
-      cursor: pointer; transition: all .15s; white-space: nowrap;
-    }
-    .btn-export:hover { border-color: var(--green); color: var(--green); }
-    .btn-export:disabled { opacity: .5; cursor: not-allowed; }
-
-    /* Delete button */
-    .btn-delete {
-      padding: 8px 16px; border-radius: 8px; font-size: .82rem; cursor: pointer;
-      background: none; border: 1px solid rgba(248,113,113,.35); color: var(--red);
-      transition: all .15s;
-    }
-    .btn-delete:hover { background: rgba(248,113,113,.1); border-color: var(--red); }
-    .btn-delete:disabled { opacity: .5; cursor: not-allowed; }
-
-    /* Search */
-    .search-wrap { margin-bottom: 12px; position: relative; }
-    .search-input {
-      width: 100%; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; padding: 9px 36px 9px 12px; color: var(--text); font-size: .88rem;
-      outline: none; transition: border-color .15s; font-family: inherit;
-    }
-    .search-input:focus { border-color: var(--accent); }
-    .search-clear {
-      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-      background: none; border: none; color: var(--muted); font-size: 1.1rem;
-      cursor: pointer; line-height: 1; padding: 0;
-    }
-    .search-clear:hover { color: var(--text); }
-    .search-result-card {
-      display: flex; align-items: center; gap: 12px;
-      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-      padding: 11px 16px; cursor: pointer; transition: border-color .15s; margin-bottom: 6px;
-    }
-    .search-result-card:hover { border-color: var(--accent); }
-    .sr-stage-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-    .sr-name  { font-size: .88rem; font-weight: 600; flex: 1; min-width: 0; }
-    .sr-stage { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-    .sr-dates { font-size: .72rem; color: var(--muted); white-space: nowrap; }
     .btn-signout {
       background: none; border: 1px solid var(--border); border-radius: 8px;
       padding: 7px 12px; font-size: 0.75rem; color: var(--muted); cursor: pointer;
@@ -350,32 +308,51 @@
     .toast.success { border-color:var(--green); color:var(--green); }
     .toast.error   { border-color:var(--red);   color:var(--red); }
 
-    @media (max-width:700px) {
-      /* Header: stack left/right on narrow screens */
-      .header-inner { flex-direction:column; align-items:flex-start; gap:8px; padding:12px 16px; }
-      .header-right { width:100%; flex-wrap:wrap; gap:6px; }
-      /* Hide less-essential header items on mobile */
-      #last-updated { display:none; }
-      .refresh-badge { display:none; }
-      /* Tighten buttons */
-      .btn-add    { padding:7px 12px; font-size:.8rem; }
-      .btn-export { padding:6px 10px; font-size:.75rem; }
-      .btn-signout{ padding:6px 10px; font-size:.72rem; }
+    /* ── Search ── */
+    .search-wrap {
+      position: relative; margin: 20px 0 4px;
     }
+    .search-input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 38px 10px 38px;
+      color: var(--text); font-size: .88rem; outline: none;
+      transition: border-color .15s; font-family: inherit;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--muted); }
+    .search-icon {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      color: var(--muted); font-size: .95rem; pointer-events: none;
+    }
+    .search-clear {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted); font-size: 1.1rem;
+      cursor: pointer; padding: 2px 6px; border-radius: 4px; line-height: 1;
+      display: none;
+    }
+    .search-clear:hover { color: var(--text); }
+
+    .search-results { display: none; margin-top: 10px; }
+    .search-results.visible { display: block; }
+    .sr-count { font-size: .73rem; color: var(--muted); margin-bottom: 10px; }
+    .sr-card {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 16px; margin-bottom: 8px; cursor: pointer;
+      transition: border-color .15s;
+    }
+    .sr-card:hover { border-color: var(--accent); }
+    .sr-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    }
+    .sr-name  { font-size: .88rem; font-weight: 600; flex: 1; min-width: 0; }
+    .sr-stage { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+    .sr-dates { font-size: .72rem; color: var(--muted); margin-top: 2px; }
+
     @media (max-width:600px) {
       .pipeline-grid { grid-template-columns:repeat(2,1fr); }
       .health-row    { grid-template-columns:repeat(2,1fr); }
       .field-row     { grid-template-columns:1fr; }
-      /* Tighter shell padding */
-      .shell { padding:0 12px; }
-      header { padding:12px 16px; }
-    }
-    @media (max-width:400px) {
-      .pipeline-grid { grid-template-columns:1fr 1fr; }
-      .health-row    { grid-template-columns:1fr 1fr; }
-      /* Very small: hide export button (still accessible via settings) */
-      .btn-export { display:none; }
-      .subtitle   { display:none; }
     }
   </style>
 </head>
@@ -466,8 +443,6 @@
 
     </div>
     <div class="modal-footer">
-      <button class="btn-delete" id="btn-delete" onclick="deleteGuest()" style="display:none">🗑 Delete</button>
-      <div style="flex:1"></div>
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" id="btn-save" onclick="saveGuest()">Save Guest</button>
     </div>
@@ -486,7 +461,6 @@
     </div>
     <div class="header-right">
       <button class="btn-add" id="btn-add" onclick="openAddModal()" style="display:none">＋ Add Guest</button>
-      <button class="btn-export" id="btn-export" onclick="exportCSV()" title="Download all guests as CSV">↓ Export CSV</button>
       <button class="btn-settings" onclick="window.location='/setup.html'" title="Settings">⚙️</button>
       <div class="refresh-badge">
         <div class="pulse"></div>
@@ -502,26 +476,29 @@
 
   <div class="error-banner" id="error-banner"></div>
 
+  <!-- Search -->
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input class="search-input" id="search-input" type="text"
+           placeholder="Search guests by name, source, notes…"
+           oninput="handleSearch(this.value)" />
+    <button class="search-clear" id="search-clear" onclick="clearSearch()" title="Clear search">✕</button>
+  </div>
+  <div class="search-results" id="search-results">
+    <div class="sr-count" id="sr-count"></div>
+    <div id="sr-list"></div>
+  </div>
+
   <!-- KPIs -->
-  <div class="section-header" id="sh-health">
+  <div class="section-header">
     <h2>Pipeline Health</h2><div class="line"></div>
   </div>
   <div class="health-row" id="health-row"></div>
 
   <!-- Stages -->
-  <div class="section-header" id="sh-stages" style="margin-top:32px">
+  <div class="section-header" style="margin-top:32px">
     <h2>Stages</h2><div class="line"></div>
   </div>
-
-  <!-- Search (shown once data loads) -->
-  <div class="search-wrap" id="search-wrap" style="display:none">
-    <input class="search-input" id="search-input" type="text"
-      placeholder="🔍  Search guests by name or source…"
-      oninput="handleSearch(this.value)" />
-    <button class="search-clear" id="search-clear" onclick="clearSearch()" style="display:none">×</button>
-  </div>
-  <div id="search-results"></div>
-
   <div class="pipeline-grid" id="pipeline-grid"></div>
   <div class="drawer" id="stage-drawer">
     <div class="drawer-header" id="drawer-title"></div>
@@ -529,7 +506,7 @@
   </div>
 
   <!-- Overdue -->
-  <div class="section-header" id="sh-overdue" style="margin-top:32px">
+  <div class="section-header" style="margin-top:32px">
     <h2>⚠️ Needs Attention</h2><div class="line"></div>
   </div>
   <div class="overdue-list" id="overdue-list"></div>
@@ -636,48 +613,6 @@ function showToast(msg, type = "success") {
   t.textContent = msg;
   t.className = `toast ${type} show`;
   setTimeout(() => t.classList.remove("show"), 2800);
-}
-
-// ── Empty state ───────────────────────────────────────────────────────────
-function renderEmptyState() {
-  // Hide health + overdue sections — no useful data to show
-  document.getElementById("sh-health").style.display   = "none";
-  document.getElementById("health-row").innerHTML       = "";
-  document.getElementById("sh-overdue").style.display  = "none";
-  document.getElementById("overdue-list").innerHTML     = "";
-  document.getElementById("stage-drawer").classList.remove("open");
-  document.getElementById("search-wrap").style.display  = "none";
-  activeStage = null;
-
-  document.getElementById("pipeline-grid").innerHTML = `
-    <div style="grid-column:1/-1;display:flex;flex-direction:column;align-items:center;
-                padding:52px 20px 44px;text-align:center">
-      <div style="font-size:3.8rem;margin-bottom:18px;line-height:1">🎙️</div>
-      <div style="font-size:1.15rem;font-weight:700;margin-bottom:8px">Your pipeline is empty</div>
-      <div style="font-size:.85rem;color:var(--muted);line-height:1.6;margin-bottom:28px;max-width:320px">
-        Add your first guest to start tracking your Mini-Talks pipeline from
-        first outreach through to published.
-      </div>
-      <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:240px">
-        <button class="btn-add" onclick="openAddModal()"
-          style="display:flex;justify-content:center;width:100%">
-          ＋ Add Your First Guest
-        </button>
-        <button onclick="window.location='/setup.html'"
-          style="background:none;border:1px solid var(--border);border-radius:8px;
-                 padding:9px;color:var(--muted);font-size:.82rem;cursor:pointer;
-                 transition:all .15s;font-family:inherit;width:100%"
-          onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'"
-          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
-          ⚙️ Import from CSV / Notion / Sheets
-        </button>
-      </div>
-    </div>`;
-}
-
-function restoreSectionHeaders() {
-  document.getElementById("sh-health").style.display  = "";
-  document.getElementById("sh-overdue").style.display = "";
 }
 
 // ── Render ────────────────────────────────────────────────────────────────
@@ -876,7 +811,6 @@ function openAddModal() {
   editingGuest = null;
   document.getElementById("modal-title").textContent = "Add Guest";
   document.getElementById("btn-save").textContent = "Add Guest";
-  document.getElementById("btn-delete").style.display = "none";
   document.getElementById("quick-actions-row").style.display = "none";
   clearModalForm();
   applyModalLocks(null);
@@ -892,9 +826,6 @@ function openEditModal(guestId) {
 
   document.getElementById("modal-title").textContent = "Edit — " + guest.name;
   document.getElementById("btn-save").textContent = "Save Changes";
-  document.getElementById("btn-delete").style.display = "";
-  document.getElementById("btn-delete").disabled = false;
-  document.getElementById("btn-delete").textContent = "🗑 Delete";
   document.getElementById("modal-error").style.display = "none";
   applyModalLocks(guest.stage);
 
@@ -1031,21 +962,12 @@ async function fetchDashboard() {
 
     // Show/hide Add Guest based on read-only status
     document.getElementById("btn-add").style.display = data.readOnly ? "none" : "";
-    errEl.style.display = "none";
 
-    if (data.totalGuests === 0) {
-      renderEmptyState();
-    } else {
-      restoreSectionHeaders();
-      renderHealth(data);
-      renderPipeline(data);
-      renderOverdue(data);
-      if (activeStage) renderDrawer(activeStage);
-      // Show search bar and re-run if active
-      document.getElementById("search-wrap").style.display = "";
-      const searchTerm = document.getElementById("search-input").value;
-      if (searchTerm) handleSearch(searchTerm);
-    }
+    errEl.style.display = "none";
+    renderHealth(data);
+    renderPipeline(data);
+    renderOverdue(data);
+    if (activeStage) renderDrawer(activeStage);
 
     const ts = new Date(data.lastUpdated);
     document.getElementById("last-updated").textContent =
@@ -1084,138 +1006,70 @@ function startCountdown() {
   }, 1000);
 }
 
-// ── Delete guest ───────────────────────────────────────────────────────────
-async function deleteGuest() {
-  if (!editingGuest) return;
-  const name = editingGuest.name;
-  if (!confirm(`Remove "${name}" from your pipeline?\n\nThis cannot be undone.`)) return;
-
-  const btn = document.getElementById("btn-delete");
-  btn.disabled = true;
-  btn.textContent = "Deleting…";
-
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(`/api/guests/${editingGuest.id}`, { method: "DELETE", headers });
-    if (!res.ok) throw new Error((await res.json()).error || "Delete failed");
-    closeModal();
-    showToast(`✓ ${name} removed from pipeline`);
-    await fetchDashboard();
-  } catch (err) {
-    showToast("Error: " + err.message, "error");
-    btn.disabled = false;
-    btn.textContent = "🗑 Delete";
-  }
-}
-
 // ── Search ─────────────────────────────────────────────────────────────────
-let searchActive = false;
-
 function handleSearch(term) {
-  const t = term.trim().toLowerCase();
+  const clearBtn = document.getElementById("search-clear");
   const resultsEl = document.getElementById("search-results");
-  const gridEl    = document.getElementById("pipeline-grid");
-  const clearBtn  = document.getElementById("search-clear");
-  const drawerEl  = document.getElementById("stage-drawer");
+  clearBtn.style.display = term ? "block" : "none";
 
-  clearBtn.style.display = t ? "" : "none";
-
-  if (!t || !data) {
-    searchActive = false;
-    resultsEl.innerHTML = "";
-    gridEl.style.opacity = "1";
-    gridEl.style.pointerEvents = "";
+  if (!term.trim()) {
+    resultsEl.classList.remove("visible");
     return;
   }
+  if (!data) return;
 
-  searchActive = true;
-  gridEl.style.opacity = "0.25";
-  gridEl.style.pointerEvents = "none";
-  drawerEl.classList.remove("open");
-  activeStage = null;
-
-  // Collect all guests across all stages
+  const q = term.toLowerCase().trim();
   const matches = [];
   for (const stage of data.stages) {
     for (const g of stage.guests) {
       if (
-        g.name.toLowerCase().includes(t) ||
-        (g.source || "").toLowerCase().includes(t) ||
-        (g.notes  || "").toLowerCase().includes(t)
+        g.name.toLowerCase().includes(q) ||
+        (g.source  || "").toLowerCase().includes(q) ||
+        (g.notes   || "").toLowerCase().includes(q)
       ) {
         matches.push({ ...g, stageName: stage.name });
       }
     }
   }
 
-  if (!matches.length) {
-    resultsEl.innerHTML = `<div class="no-overdue" style="margin-top:0">No guests match "<em>${esc(term)}</em>"</div>`;
-    return;
-  }
+  const count = matches.length;
+  document.getElementById("sr-count").textContent =
+    count === 0 ? "No guests found" : `${count} guest${count !== 1 ? "s" : ""} found`;
 
-  resultsEl.innerHTML = matches.map(g => {
+  document.getElementById("sr-list").innerHTML = matches.map(g => {
     const color = STAGE_COLORS[g.stageName] || "#fff";
     const dates = [];
-    if (g.briefingDate)  dates.push(`Briefing ${fmtDate(g.briefingDate)}`);
-    if (g.interviewDate) dates.push(`Interview ${fmtDate(g.interviewDate)}`);
+    if (g.invitationDate) dates.push(`Invited ${fmtDate(g.invitationDate)}`);
+    if (g.briefingDate)   dates.push(`Briefing ${fmtDate(g.briefingDate)}`);
+    if (g.interviewDate)  dates.push(`Interview ${fmtDate(g.interviewDate)}`);
     return `
-      <div class="search-result-card" onclick="openEditModal('${g.id}')">
-        <div class="sr-stage-dot" style="background:${color};box-shadow:0 0 6px ${color}"></div>
+      <div class="sr-card" onclick="${data.readOnly ? "" : `openEditModal('${g.id}')`}">
+        <div class="sr-dot" style="background:${color};box-shadow:0 0 6px ${color}"></div>
         <div style="flex:1;min-width:0">
           <div class="sr-name">${esc(g.name)}</div>
-          <div class="sr-stage" style="color:${color};margin-top:2px">${g.stageName}</div>
+          ${dates.length ? `<div class="sr-dates">${dates.join(" · ")}</div>` : ""}
         </div>
-        ${dates.length ? `<div class="sr-dates">${dates.join(" · ")}</div>` : ""}
+        <div class="sr-stage">${esc(g.stageName)}</div>
       </div>`;
   }).join("");
+
+  resultsEl.classList.add("visible");
 }
 
 function clearSearch() {
   const input = document.getElementById("search-input");
   input.value = "";
-  handleSearch("");
   input.focus();
+  document.getElementById("search-clear").style.display = "none";
+  document.getElementById("search-results").classList.remove("visible");
 }
 
-// ── Export CSV ─────────────────────────────────────────────────────────────
-async function exportCSV() {
-  const btn = document.getElementById("btn-export");
-  btn.disabled = true;
-  btn.textContent = "Exporting…";
-  try {
-    const token = await currentUser.getIdToken();
-    const res = await fetch("/api/export", {
-      headers: { "Authorization": `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    const today = new Date().toISOString().split("T")[0];
-    a.href     = url;
-    a.download = `mini-talks-guests-${today}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast("✓ CSV downloaded");
-  } catch (err) {
-    showToast("Export failed: " + err.message, "error");
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "↓ Export CSV";
-  }
-}
-
-// Keyboard: Escape closes modal or clears search
+// Keyboard: Escape clears search if active, else closes modal
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
-    if (document.getElementById("modal-overlay").classList.contains("open")) {
-      closeModal();
-    } else if (document.getElementById("search-input").value) {
-      clearSearch();
-    }
+    const term = document.getElementById("search-input")?.value;
+    if (term) { clearSearch(); }
+    else { closeModal(); }
   }
 });
 </script>

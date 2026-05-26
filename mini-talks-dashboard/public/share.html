@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini-Talks Pipeline (Shared View)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0e0f14; --surface:#16181f; --surface2:#1e2029; --border:#2a2d3a;
+      --text:#e8eaf0; --muted:#7a7f96; --accent:#4bb8d0;
+      --c-outreach:#4f8ef7; --c-briefbook:#a78bfa; --c-briefdone:#fb923c;
+      --c-intbook:#38bdf8; --c-intdone:#34d399; --c-published:#facc15;
+      --red:#f87171; --green:#34d399; --yellow:#facc15;
+    }
+    body { background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,sans-serif; min-height:100vh; padding-bottom:80px; }
+
+    /* ── Header ── */
+    header { background:var(--surface); border-bottom:1px solid var(--border); padding:16px 24px; position:sticky; top:0; z-index:100; }
+    .header-inner { max-width:1200px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .header-left { display:flex; align-items:center; gap:12px; }
+    .nr-logo { font-size:1.5rem; font-weight:900; letter-spacing:-0.04em; color:#e8eaf0; line-height:1; }
+    .nr-logo .nr-dot { color:#4bb8d0; }
+    .title    { font-size:1.1rem; font-weight:700; }
+    .subtitle { font-size:.75rem; color:var(--muted); margin-top:2px; }
+    .shared-badge {
+      display:flex; align-items:center; gap:6px;
+      background:rgba(75,184,208,.1); border:1px solid rgba(75,184,208,.25);
+      border-radius:20px; padding:5px 12px; font-size:.72rem; color:var(--accent);
+    }
+
+    /* ── Shell ── */
+    .shell { max-width:1200px; margin:0 auto; padding:0 24px; }
+    .section-header { display:flex; align-items:center; gap:8px; margin:28px 0 14px; }
+    .section-header h2 { font-size:.75rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+    .section-header .line { flex:1; height:1px; background:var(--border); }
+
+    /* ── KPI row ── */
+    .health-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(175px,1fr)); gap:10px; }
+    .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+    .stat-card .label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+    .stat-card .value { font-size:1.9rem; font-weight:700; margin-top:4px; line-height:1; }
+    .stat-card .sub   { font-size:.72rem; color:var(--muted); margin-top:4px; }
+    .health-bar-wrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+    .health-bar-wrap .label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin-bottom:10px; }
+    .bar-outer { height:9px; background:var(--surface2); border-radius:99px; overflow:hidden; }
+    .bar-inner { height:100%; border-radius:99px; transition:width .8s ease; background:linear-gradient(90deg,#6c63ff,#34d399); }
+    .bar-score { font-size:1.7rem; font-weight:700; margin-top:8px; }
+
+    /* ── Pipeline grid ── */
+    .pipeline-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:10px; }
+    .stage-card {
+      background:var(--surface); border:1px solid var(--border); border-radius:12px;
+      padding:18px 16px; cursor:pointer; transition:border-color .2s,transform .15s;
+      position:relative; overflow:hidden; --stage-color:#fff;
+    }
+    .stage-card:hover  { border-color:var(--stage-color); transform:translateY(-2px); }
+    .stage-card.active { border-color:var(--stage-color); background:var(--surface2); }
+    .stage-card::after { content:''; position:absolute; top:0;left:0;right:0; height:3px; background:var(--stage-color); opacity:.6; }
+    .stage-dot   { width:9px;height:9px;border-radius:50%;background:var(--stage-color);box-shadow:0 0 7px var(--stage-color);margin-bottom:10px; }
+    .stage-name  { font-size:.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em; }
+    .stage-count { font-size:2.6rem;font-weight:800;line-height:1;margin-top:3px;color:var(--stage-color); }
+    .stage-label { font-size:.68rem;color:var(--muted);margin-top:2px; }
+
+    /* ── Drawer ── */
+    .drawer { background:var(--surface2); border:1px solid var(--border); border-radius:12px; margin-top:10px; overflow:hidden; max-height:0; opacity:0; transition:max-height .3s ease,opacity .3s ease; }
+    .drawer.open { max-height:700px; opacity:1; overflow-y:auto; }
+    .drawer-header { padding:11px 18px; font-size:.73rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; border-bottom:1px solid var(--border); }
+    .guest-row { display:flex; align-items:flex-start; justify-content:space-between; padding:12px 18px; border-bottom:1px solid var(--border); gap:12px; }
+    .guest-row:last-child { border-bottom:none; }
+    .guest-name  { font-size:.88rem; font-weight:600; }
+    .guest-dates { font-size:.72rem; color:var(--muted); margin-top:3px; display:flex; gap:10px; flex-wrap:wrap; }
+    .guest-notes { font-size:.72rem; color:var(--muted); margin-top:4px; font-style:italic; opacity:.8; }
+    .empty-drawer { padding:20px 18px; color:var(--muted); font-size:.82rem; text-align:center; }
+
+    /* ── Overdue ── */
+    .overdue-list { display:flex; flex-direction:column; gap:8px; }
+    .overdue-card { display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--red); border-radius:10px; padding:13px 16px; }
+    .overdue-name   { font-size:.88rem; font-weight:600; }
+    .overdue-reason { font-size:.74rem; color:var(--muted); margin-top:2px; }
+    .overdue-days   { margin-left:auto; flex-shrink:0; font-size:.72rem; font-weight:700; color:var(--red); background:rgba(248,113,113,.1); padding:3px 9px; border-radius:99px; }
+    .no-overdue     { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px; text-align:center; color:var(--muted); font-size:.85rem; }
+
+    /* ── States ── */
+    .init-overlay { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:999; transition:opacity .4s; }
+    .init-overlay.hidden { opacity:0; pointer-events:none; }
+    .spinner { width:38px; height:38px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .error-state { max-width:400px; margin:80px auto; text-align:center; padding:0 24px; }
+    .error-state .icon  { font-size:3rem; margin-bottom:16px; }
+    .error-state h2     { font-size:1.1rem; font-weight:700; margin-bottom:8px; }
+    .error-state p      { font-size:.85rem; color:var(--muted); line-height:1.5; }
+
+    footer { margin-top:40px; padding:20px 24px; text-align:center; font-size:.72rem; color:var(--muted); border-top:1px solid var(--border); }
+    footer a { color:var(--accent); text-decoration:none; }
+
+    @media (max-width:600px) {
+      .pipeline-grid { grid-template-columns:repeat(2,1fr); }
+      .health-row    { grid-template-columns:repeat(2,1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="init-overlay" id="init-overlay">
+  <div class="spinner"></div>
+</div>
+
+<header>
+  <div class="header-inner">
+    <div class="header-left">
+      <div class="nr-logo">nr<span class="nr-dot">.</span></div>
+      <div>
+        <div class="title">Mini-Talks Pipeline</div>
+        <div class="subtitle">by <a href="https://nikhilrughani.com" target="_blank" style="color:#4bb8d0;text-decoration:none;font-weight:600">Nikhil Rughani</a></div>
+      </div>
+    </div>
+    <div class="shared-badge">
+      👁 Read-only shared view &nbsp;·&nbsp; <span id="updated-label">loading…</span>
+    </div>
+  </div>
+</header>
+
+<main class="shell" id="main-content" style="display:none">
+
+  <!-- KPIs -->
+  <div class="section-header">
+    <h2>Pipeline Health</h2><div class="line"></div>
+  </div>
+  <div class="health-row" id="health-row"></div>
+
+  <!-- Stages -->
+  <div class="section-header" style="margin-top:32px">
+    <h2>Stages</h2><div class="line"></div>
+  </div>
+  <div class="pipeline-grid" id="pipeline-grid"></div>
+  <div class="drawer" id="stage-drawer">
+    <div class="drawer-header" id="drawer-title"></div>
+    <div id="drawer-content"></div>
+  </div>
+
+  <!-- Overdue -->
+  <div class="section-header" style="margin-top:32px">
+    <h2>⚠️ Needs Attention</h2><div class="line"></div>
+  </div>
+  <div class="overdue-list" id="overdue-list"></div>
+
+</main>
+
+<div id="error-state" class="error-state" style="display:none">
+  <div class="icon">🔒</div>
+  <h2 id="error-title">Link unavailable</h2>
+  <p id="error-msg">This share link is invalid or has been disabled by the owner.</p>
+</div>
+
+<footer>
+  Mini-Talks Pipeline &nbsp;·&nbsp; Built by <a href="https://nikhilrughani.com" target="_blank">Nikhil Rughani</a>
+  &nbsp;·&nbsp; <a href="/">Create your own dashboard →</a>
+</footer>
+
+<!-- Load firebase-config.js only for the project ID — no Firebase SDK needed -->
+<script src="/firebase-config.js"></script>
+<script>
+// ── Parse URL ──────────────────────────────────────────────────────────────
+const parts = window.location.pathname.split("/").filter(Boolean);
+// URL format: /share/{uid}/{token}
+const uid   = parts[1];
+const token = parts[2];
+
+if (!uid || !token) { showError("Invalid URL", "This share link appears to be malformed."); }
+else { loadShare(); }
+
+// ── Load snapshot from Firestore (public read) ─────────────────────────────
+async function loadShare() {
+  const projectId = window.firebaseConfig?.projectId;
+  if (!projectId) { showError("Configuration error", "Firebase project ID not found."); return; }
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}/publicSnapshot/data`;
+  try {
+    const res = await fetch(url);
+    if (res.status === 404) { showError("Link unavailable", "This share link is invalid or has been disabled."); return; }
+    if (!res.ok) throw new Error(`Firestore error ${res.status}`);
+
+    const doc = await res.json();
+    const f   = doc.fields;
+    if (!f) { showError("No data", "Snapshot is empty."); return; }
+
+    const snapshotToken = f.token?.stringValue;
+    const enabled       = f.enabled?.stringValue;
+    if (snapshotToken !== token || enabled !== "true") {
+      showError("Link disabled", "This share link has been disabled by the owner.");
+      return;
+    }
+
+    const dashboardJson = f.dashboardJson?.stringValue;
+    if (!dashboardJson) { showError("No data", "The pipeline snapshot is empty."); return; }
+
+    const data      = JSON.parse(dashboardJson);
+    const updatedAt = f.updatedAt?.stringValue;
+    if (updatedAt) {
+      const ts = new Date(updatedAt);
+      document.getElementById("updated-label").textContent =
+        "Updated " + ts.toLocaleDateString("en-AU", { day:"numeric", month:"short" }) +
+        " " + ts.toLocaleTimeString("en-AU", { hour:"2-digit", minute:"2-digit" });
+    }
+
+    renderDashboard(data);
+    document.getElementById("init-overlay").classList.add("hidden");
+    document.getElementById("main-content").style.display = "";
+
+  } catch (err) {
+    showError("Error loading pipeline", err.message);
+  }
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const STAGE_COLORS = {
+  "Outreach Sent":"var(--c-outreach)", "Briefing Booked":"var(--c-briefbook)",
+  "Briefing Done":"var(--c-briefdone)", "Interview Booked":"var(--c-intbook)",
+  "Interview Done":"var(--c-intdone)", "Published":"var(--c-published)",
+};
+let data = null, activeStage = null;
+
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+function fmtDate(iso) {
+  if (!iso) return null;
+  const [y,m,d] = iso.split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${parseInt(d)} ${months[parseInt(m)-1]}`;
+}
+
+function relDay(iso) {
+  if (!iso) return "";
+  const diff = Math.round((Date.now() - new Date(iso+"T12:00:00").getTime()) / 86_400_000);
+  if (diff === 0) return "today";
+  if (diff === 1) return "yesterday";
+  if (diff < 0)  return `in ${Math.abs(diff)}d`;
+  return `${diff}d ago`;
+}
+
+function healthColor(s) {
+  return s >= 70 ? "var(--green)" : s >= 40 ? "var(--yellow)" : "var(--red)";
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function renderDashboard(d) {
+  data = d;
+  renderHealth(d);
+  renderPipeline(d);
+  renderOverdue(d);
+}
+
+function renderHealth(d) {
+  document.getElementById("health-row").innerHTML = `
+    <div class="health-bar-wrap">
+      <div class="label">Overall Health</div>
+      <div class="bar-outer"><div class="bar-inner" id="health-bar" style="width:0%"></div></div>
+      <div class="bar-score" style="color:${healthColor(d.healthScore)}">${d.healthScore}<span style="font-size:.9rem;font-weight:400;color:var(--muted)">/100</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Guests</div>
+      <div class="value">${d.totalGuests}</div>
+      <div class="sub">${d.totalActive} active in pipeline</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">This Week</div>
+      <div class="value" style="color:var(--c-intdone)">${d.weeklyInterviews}</div>
+      <div class="sub">interview${d.weeklyInterviews!==1?"s":""} · ${d.weeklyBriefings} briefing${d.weeklyBriefings!==1?"s":""}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Needs Attention</div>
+      <div class="value" style="color:${d.overdue.length>0?"var(--red)":"var(--green)"}">${d.overdue.length}</div>
+      <div class="sub">${d.overdue.length===0?"All guests on track 🎉":"follow-up overdue"}</div>
+    </div>`;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const b = document.getElementById("health-bar");
+    if (b) b.style.width = d.healthScore + "%";
+  }));
+}
+
+function renderPipeline(d) {
+  document.getElementById("pipeline-grid").innerHTML = d.stages.map(s => `
+    <div class="stage-card ${activeStage===s.name?"active":""}"
+         style="--stage-color:${STAGE_COLORS[s.name]||"#fff"}"
+         onclick="toggleDrawer('${s.name}')">
+      <div class="stage-dot"></div>
+      <div class="stage-name">${s.name}</div>
+      <div class="stage-count">${s.count}</div>
+      <div class="stage-label">guest${s.count!==1?"s":""}</div>
+    </div>`).join("");
+}
+
+function toggleDrawer(stageName) {
+  const drawer = document.getElementById("stage-drawer");
+  if (activeStage === stageName) {
+    activeStage = null;
+    drawer.classList.remove("open");
+  } else {
+    activeStage = stageName;
+    const stage = data.stages.find(s => s.name === stageName);
+    document.getElementById("drawer-title").textContent = `${stageName} · ${stage.count} guest${stage.count!==1?"s":""}`;
+    if (!stage.guests.length) {
+      document.getElementById("drawer-content").innerHTML = `<div class="empty-drawer">No guests at this stage</div>`;
+    } else {
+      document.getElementById("drawer-content").innerHTML = stage.guests.map(g => {
+        const dates = [];
+        if (g.invitationDate) dates.push(`Invited: ${fmtDate(g.invitationDate)} <span style="opacity:.5">(${relDay(g.invitationDate)})</span>`);
+        if (g.briefingDate)   dates.push(`Briefing: ${fmtDate(g.briefingDate)} <span style="opacity:.5">(${relDay(g.briefingDate)})</span>`);
+        if (g.interviewDate)  dates.push(`Interview: ${fmtDate(g.interviewDate)} <span style="opacity:.5">(${relDay(g.interviewDate)})</span>`);
+        return `
+          <div class="guest-row">
+            <div>
+              <div class="guest-name">${esc(g.name)}</div>
+              ${dates.length ? `<div class="guest-dates">${dates.join(" · ")}</div>` : ""}
+              ${g.notes ? `<div class="guest-notes">${esc(g.notes)}</div>` : ""}
+            </div>
+          </div>`;
+      }).join("");
+    }
+    drawer.classList.add("open");
+  }
+  renderPipeline(data);
+}
+
+function renderOverdue(d) {
+  const el = document.getElementById("overdue-list");
+  if (!d.overdue.length) {
+    el.innerHTML = `<div class="no-overdue"><span style="font-size:1.4rem;display:block;margin-bottom:6px">✅</span>No one needs follow-up — pipeline is flowing!</div>`;
+  } else {
+    el.innerHTML = d.overdue.map(o => `
+      <div class="overdue-card">
+        <span style="font-size:1.1rem">⚠️</span>
+        <div>
+          <div class="overdue-name">${esc(o.name)}</div>
+          <div class="overdue-reason">${esc(o.reason)}</div>
+        </div>
+        <div class="overdue-days">${o.daysOverdue}d overdue</div>
+      </div>`).join("");
+  }
+}
+
+// ── Error state ────────────────────────────────────────────────────────────
+function showError(title, msg) {
+  document.getElementById("init-overlay").classList.add("hidden");
+  document.getElementById("main-content").style.display = "none";
+  document.getElementById("error-title").textContent = title;
+  document.getElementById("error-msg").textContent   = msg;
+  document.getElementById("error-state").style.display = "block";
+}
+</script>
+</body>
+</html>
