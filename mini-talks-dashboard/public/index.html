@@ -67,6 +67,12 @@
       padding: 7px 10px; font-size: 1rem; cursor: pointer; transition: border-color .15s; line-height:1;
     }
     .btn-settings:hover { border-color: var(--accent); }
+    .btn-signout {
+      background: none; border: 1px solid var(--border); border-radius: 8px;
+      padding: 7px 12px; font-size: 0.75rem; color: var(--muted); cursor: pointer;
+      transition: all .15s; white-space: nowrap;
+    }
+    .btn-signout:hover { border-color: var(--red); color: var(--red); }
 
     .refresh-badge {
       display: flex; align-items: center; gap: 6px;
@@ -158,21 +164,13 @@
     }
     .cb-item.checked { border-color: var(--green); color: var(--green); background: rgba(52,211,153,.1); }
     .cb-item.saving  { opacity:.5; pointer-events:none; }
-    .cb-item.locked  {
-      opacity:.3; cursor:not-allowed; pointer-events:none;
-      border-style: dashed;
-    }
+    .cb-item.locked  { opacity:.3; cursor:not-allowed; pointer-events:none; border-style: dashed; }
     .cb-box { width:10px;height:10px;border-radius:2px;border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:8px; }
 
     /* modal locked checkboxes */
-    .modal-checkbox.locked {
-      opacity:.35; cursor:not-allowed;
-    }
+    .modal-checkbox.locked { opacity:.35; cursor:not-allowed; }
     .modal-checkbox.locked input { pointer-events:none; }
-    .modal-checkbox .lock-hint {
-      font-size:.65rem; color:var(--muted); margin-left:auto;
-      white-space:nowrap;
-    }
+    .modal-checkbox .lock-hint { font-size:.65rem; color:var(--muted); margin-left:auto; white-space:nowrap; }
 
     .btn-edit {
       font-size:.7rem; padding:4px 10px; border-radius:6px;
@@ -255,7 +253,6 @@
     .field input:focus,
     .field textarea:focus { border-color:var(--accent); }
     .field textarea { resize:vertical; min-height:72px; line-height:1.5; }
-    /* make date inputs readable */
     .field input[type=date]::-webkit-calendar-picker-indicator { filter:invert(1) opacity(.5); cursor:pointer; }
 
     .field-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -324,7 +321,7 @@
 <div class="loading-overlay" id="loading">
   <div style="display:flex;flex-direction:column;align-items:center;">
     <div class="spinner"></div>
-    <p class="loader-text">Fetching your pipeline from Notion…</p>
+    <p class="loader-text" id="loader-text">Loading your pipeline…</p>
   </div>
 </div>
 
@@ -422,13 +419,14 @@
       </div>
     </div>
     <div class="header-right">
-      <button class="btn-add" onclick="openAddModal()">＋ Add Guest</button>
+      <button class="btn-add" id="btn-add" onclick="openAddModal()" style="display:none">＋ Add Guest</button>
       <button class="btn-settings" onclick="window.location='/setup.html'" title="Settings">⚙️</button>
       <div class="refresh-badge">
         <div class="pulse"></div>
         <span id="countdown-text">60s</span>
       </div>
       <div id="last-updated">—</div>
+      <button class="btn-signout" onclick="signOut()">Sign Out</button>
     </div>
   </div>
 </header>
@@ -461,42 +459,55 @@
 
 </main>
 
-<script>
-// ── Credentials ────────────────────────────────────────────────────────────
-function getCreds() { return JSON.parse(localStorage.getItem("miniTalksCreds") || "{}"); }
+<!-- Firebase SDK (auto-configured by Firebase Hosting) -->
+<script src="/__/firebase/10.12.0/firebase-app-compat.js"></script>
+<script src="/__/firebase/10.12.0/firebase-auth-compat.js"></script>
+<script src="/__/firebase/init.js"></script>
 
-function credHeaders(extra) {
-  const c = getCreds();
-  return Object.assign({
-    "Content-Type":   "application/json",
-    "x-data-source":  c.source      || "notion",
-    "x-notion-token": c.notionToken || "",
-    "x-notion-db-id": c.notionDbId  || "",
-    "x-sheets-url":   c.sheetsUrl   || "",
-  }, extra);
+<script>
+// ── Firebase Auth ──────────────────────────────────────────────────────────
+const auth = firebase.auth();
+let currentUser = null;
+
+auth.onAuthStateChanged(async user => {
+  if (!user) {
+    window.location.replace("/login.html");
+    return;
+  }
+  currentUser = user;
+  await fetchDashboard();
+  startCountdown();
+});
+
+async function signOut() {
+  clearInterval(countdownTimer);
+  await auth.signOut();
+  window.location.replace("/login.html");
 }
 
-function isReadOnly() { return getCreds().source === "sheets"; }
+async function getAuthHeaders(extra) {
+  const token = await currentUser.getIdToken();
+  return Object.assign({ "Authorization": `Bearer ${token}`, "Content-Type": "application/json" }, extra);
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const REFRESH_INTERVAL = 60;
 const STAGE_COLORS = {
-  "Outreach Sent":   "var(--c-outreach)",
-  "Briefing Booked": "var(--c-briefbook)",
-  "Briefing Done":   "var(--c-briefdone)",
-  "Interview Booked":"var(--c-intbook)",
-  "Interview Done":  "var(--c-intdone)",
-  "Published":       "var(--c-published)",
+  "Outreach Sent":    "var(--c-outreach)",
+  "Briefing Booked":  "var(--c-briefbook)",
+  "Briefing Done":    "var(--c-briefdone)",
+  "Interview Booked": "var(--c-intbook)",
+  "Interview Done":   "var(--c-intdone)",
+  "Published":        "var(--c-published)",
 };
 const STAGE_ORDER = {
   "Outreach Sent":0, "Briefing Booked":1, "Briefing Done":2,
   "Interview Booked":3, "Interview Done":4, "Published":5,
 };
 
-// Which stage index a field requires before it becomes active
 const FIELD_UNLOCK = {
   offerMade:     4, // Interview Done
-  published:     4, // Interview Done (checking this moves guest to Published)
+  published:     4, // Interview Done
   assetsCreated: 5, // Published
   assetsShared:  5, // Published
   reels1:        5, // Published
@@ -507,14 +518,14 @@ const UNLOCK_LABEL = { 4: "after interview", 5: "after published" };
 
 function isFieldUnlocked(fieldKey, guestStage) {
   const required = FIELD_UNLOCK[fieldKey];
-  if (required === undefined) return true; // no restriction
+  if (required === undefined) return true;
   return (STAGE_ORDER[guestStage] ?? 0) >= required;
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
 let data         = null;
 let activeStage  = null;
-let editingGuest = null;  // null = add mode, object = edit mode
+let editingGuest = null;
 let countdownSecs = REFRESH_INTERVAL;
 let countdownTimer = null;
 
@@ -614,25 +625,23 @@ function renderDrawer(stageName) {
         { key:"reels3",        val:g.reels3,        label:"Reel 3" },
       ];
 
+      // Don't show edit/checkboxes in read-only mode
+      const readOnly = data.readOnly;
+
       return `
         <div class="guest-row">
           <div class="guest-left">
-            <div class="guest-name" onclick="openEditModal('${g.id}')">${esc(g.name)}</div>
+            <div class="guest-name" onclick="${readOnly ? "" : `openEditModal('${g.id}')`}" style="${readOnly ? "cursor:default" : ""}">${esc(g.name)}</div>
             ${dates.length ? `<div class="guest-dates">${dates.join(" · ")}</div>` : ""}
             ${g.notes ? `<div class="guest-notes">${esc(g.notes)}</div>` : ""}
           </div>
+          ${readOnly ? "" : `
           <div class="guest-right">
             <div class="cb-group">
               ${cbs.map(cb => {
                 const unlocked = isFieldUnlocked(cb.key, g.stage);
-                const classes  = [
-                  "cb-item",
-                  cb.val    ? "checked" : "",
-                  !unlocked ? "locked"  : "",
-                ].filter(Boolean).join(" ");
-                const click = unlocked
-                  ? `onclick="toggleCheckbox('${g.id}','${cb.key}',${!cb.val})"`
-                  : "";
+                const classes  = ["cb-item", cb.val ? "checked" : "", !unlocked ? "locked" : ""].filter(Boolean).join(" ");
+                const click = unlocked ? `onclick="toggleCheckbox('${g.id}','${cb.key}',${!cb.val})"` : "";
                 return `
                   <div class="${classes}" id="cb-${g.id}-${cb.key}" ${click}>
                     <div class="cb-box">${cb.val ? "✓" : (unlocked ? "" : "🔒")}</div>
@@ -641,7 +650,7 @@ function renderDrawer(stageName) {
               }).join("")}
             </div>
             <button class="btn-edit" onclick="openEditModal('${g.id}')">Edit</button>
-          </div>
+          </div>`}
         </div>`;
     }).join("");
   }
@@ -655,7 +664,7 @@ function renderOverdue(d) {
     el.innerHTML = `<div class="no-overdue"><span style="font-size:1.4rem;display:block;margin-bottom:6px">✅</span>No one needs follow-up — pipeline is flowing!</div>`;
   } else {
     el.innerHTML = d.overdue.map(o => `
-      <div class="overdue-card" onclick="openEditModal('${o.id}')" style="cursor:pointer">
+      <div class="overdue-card" onclick="${data.readOnly ? "" : `openEditModal('${o.id}')`}" style="${data.readOnly ? "" : "cursor:pointer"}">
         <span style="font-size:1.1rem">⚠️</span>
         <div>
           <div class="overdue-name">${esc(o.name)}</div>
@@ -686,19 +695,18 @@ async function toggleCheckbox(guestId, field, newValue) {
   el.classList.add("saving");
 
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(`/api/guests/${guestId}`, {
-      method:"PATCH",
-      headers: credHeaders(),
+      method: "PATCH",
+      headers,
       body: JSON.stringify({ [field]: newValue }),
     });
     if (!res.ok) throw new Error((await res.json()).error);
 
-    // Update local data
     for (const stage of data.stages)
       for (const g of stage.guests)
         if (g.id === guestId) { g[field] = newValue; break; }
 
-    // Re-classify if published changed (guest may move stage)
     if (field === "published") {
       await fetchDashboard();
     } else {
@@ -714,7 +722,6 @@ async function toggleCheckbox(guestId, field, newValue) {
 }
 
 // ── Modal logic ────────────────────────────────────────────────────────────
-// Map from field key → {modalCbId, lockHintId, inputId}
 const MODAL_CB_MAP = {
   offerMade:     { wrap:"mcb-offer",         hint:"lh-offer",         input:"f-offer" },
   published:     { wrap:"mcb-published",      hint:"lh-published",     input:"f-published" },
@@ -726,7 +733,6 @@ const MODAL_CB_MAP = {
 };
 
 function applyModalLocks(guestStage) {
-  // guestStage = null means "Add" mode → lock all restricted fields
   for (const [key, ids] of Object.entries(MODAL_CB_MAP)) {
     const unlocked = guestStage ? isFieldUnlocked(key, guestStage) : (FIELD_UNLOCK[key] === undefined);
     const wrap  = document.getElementById(ids.wrap);
@@ -741,8 +747,7 @@ function applyModalLocks(guestStage) {
       wrap.classList.add("locked");
       input.disabled = true;
       input.checked  = false;
-      const req = FIELD_UNLOCK[key];
-      hint.textContent = "🔒 " + (UNLOCK_LABEL[req] || "");
+      hint.textContent = "🔒 " + (UNLOCK_LABEL[FIELD_UNLOCK[key]] || "");
     }
   }
 }
@@ -769,7 +774,6 @@ function openEditModal(guestId) {
   document.getElementById("modal-error").style.display = "none";
   applyModalLocks(guest.stage);
 
-  // Populate form
   document.getElementById("f-name").value       = guest.name || "";
   document.getElementById("f-source").value     = guest.source || "";
   document.getElementById("f-invitation").value = guest.invitationDate || "";
@@ -784,9 +788,7 @@ function openEditModal(guestId) {
   document.getElementById("f-reels2").checked           = guest.reels2;
   document.getElementById("f-reels3").checked           = guest.reels3;
 
-  // Quick actions based on current stage
   buildQuickActions(guest);
-
   document.getElementById("modal-overlay").classList.add("open");
 }
 
@@ -870,7 +872,8 @@ async function saveGuest() {
   try {
     const url    = editingGuest ? `/api/guests/${editingGuest.id}` : "/api/guests";
     const method = editingGuest ? "PATCH" : "POST";
-    const res    = await fetch(url, { method, headers: credHeaders(), body:JSON.stringify(payload) });
+    const headers = await getAuthHeaders();
+    const res    = await fetch(url, { method, headers, body: JSON.stringify(payload) });
     if (!res.ok) throw new Error((await res.json()).error || "Save failed");
 
     closeModal();
@@ -886,24 +889,24 @@ async function saveGuest() {
 
 // ── Fetch & render full dashboard ──────────────────────────────────────────
 async function fetchDashboard() {
-  // If no credentials saved, send to setup wizard
-  const c = getCreds();
-  if (!c.source && !c.notionToken && !c.sheetsUrl) {
-    const hasEnv = await fetch("/api/health").then(r=>r.ok).catch(()=>false);
-    // Only redirect if server has no env vars either — check via a probe
-    const probe = await fetch("/api/dashboard", { headers: credHeaders() });
-    if (!probe.ok) { window.location = "/setup.html"; return; }
-  }
-
-  // Hide Add Guest button for read-only sources
-  const addBtn = document.querySelector(".btn-add");
-  if (addBtn) addBtn.style.display = isReadOnly() ? "none" : "";
+  if (!currentUser) return;
 
   const errEl = document.getElementById("error-banner");
   try {
-    const res = await fetch("/api/dashboard", { headers: credHeaders() });
+    const headers = await getAuthHeaders();
+    const res = await fetch("/api/dashboard", { headers });
+
+    if (res.status === 404 || res.status === 400) {
+      // User has no credentials saved yet → go to setup
+      window.location.replace("/setup.html");
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
     data = await res.json();
+
+    // Show/hide Add Guest based on read-only status
+    document.getElementById("btn-add").style.display = data.readOnly ? "none" : "";
 
     errEl.style.display = "none";
     renderHealth(data);
@@ -916,8 +919,13 @@ async function fetchDashboard() {
       "Updated " + ts.toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
 
   } catch (err) {
+    // If credentials not configured, the Cloud Function returns an error
+    if (err.message.includes("not configured") || err.message.includes("Please visit Settings")) {
+      window.location.replace("/setup.html");
+      return;
+    }
     errEl.style.display = "block";
-    errEl.textContent = "⚠️  Could not reach Notion API — " + err.message + ". Retrying in 60s.";
+    errEl.textContent = "⚠️  Could not load pipeline — " + err.message + ". Retrying in 60s.";
   } finally {
     document.getElementById("loading").classList.add("hidden");
   }
@@ -945,9 +953,6 @@ function startCountdown() {
 
 // Keyboard: Escape closes modal
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
-
-// ── Init ───────────────────────────────────────────────────────────────────
-fetchDashboard().then(() => startCountdown());
 </script>
 </body>
 </html>

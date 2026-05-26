@@ -1,34 +1,134 @@
 # 🎙️ Mini-Talks Pipeline Dashboard
 
-A real-time pipeline dashboard for the **Mini-Talk Method** — track guests from Outreach through to Published, auto-refreshing every 60 seconds.
+Real-time pipeline dashboard for the Mini-Talks talk-show format. Built on **Firebase** so every subscriber gets their own secure login — you can sell access and each user connects their own Notion database.
 
-Supports **Notion** (full read + write) and **Google Sheets** (read-only view).
-
----
-
-## 🚀 Deploy your own copy (recommended)
-
-Each person gets their own private dashboard on Vercel — free, no server to manage.
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fnikhilrughani%2Fai-agents&root-directory=mini-talks-dashboard&project-name=mini-talks-dashboard&repository-name=mini-talks-dashboard)
-
-1. Click the button above
-2. Log in to Vercel (free account)
-3. Click **Deploy** — no environment variables needed upfront
-4. Once deployed, visit your new URL — the **setup wizard** will guide you through connecting your data source
+Auto-refreshes every 60 seconds. Zero ongoing maintenance.
 
 ---
 
-## 🗄️ Option A — Connect Notion
+## What's inside
 
-1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations) → **New integration** → copy the token
-2. Open your Mini-Talks database in Notion → **···** menu → **Connections** → add your integration
-3. Copy your database ID from the URL (the 32-character hex string)
-4. Paste both into the dashboard setup wizard
+| Layer | Tech | Purpose |
+|---|---|---|
+| Hosting | Firebase Hosting | Serves the HTML/CSS/JS frontend |
+| API | Firebase Cloud Functions (Node.js) | Proxies Notion / Sheets API calls, enforces auth |
+| Auth | Firebase Authentication | Per-subscriber email + password login |
+| Data | Google Firestore | Stores per-user Notion credentials securely |
+| Source | Notion API **or** Google Sheets | Where your guest data lives |
 
-## 📊 Option B — Connect Google Sheets
+---
 
-Your sheet must have these column headers **in row 1, in this order**:
+## Pipeline stages
+
+```
+Outreach Sent → Briefing Booked → Briefing Done → Interview Booked → Interview Done → Published
+```
+
+**Dashboard shows:**
+- Count of guests at each stage (colour-coded)
+- Overdue follow-up flags (briefing done >7d with no interview, etc.)
+- Weekly throughput (interviews + briefings this week)
+- Overall pipeline health score (0–100)
+- Click any stage to expand the guest list with inline checkbox toggles
+
+---
+
+## First-time setup (5 minutes)
+
+### 1. Create a Firebase project
+
+1. Go to [console.firebase.google.com](https://console.firebase.google.com) → **Add project**
+2. Name it (e.g. `mini-talks-dashboard`)
+
+### 2. Enable services in the Firebase console
+
+| Console section | What to enable |
+|---|---|
+| **Authentication → Sign-in method** | Email/Password → Enable |
+| **Firestore Database** | Create database → Start in **production mode** → choose region |
+| **Functions** | Upgrade to **Blaze plan** (pay-as-you-go — free tier covers typical usage) |
+
+### 3. Install Firebase CLI
+
+```bash
+npm install -g firebase-tools
+firebase login
+```
+
+### 4. Wire up your project ID
+
+Edit `.firebaserc` — replace `REPLACE_WITH_YOUR_FIREBASE_PROJECT_ID`:
+
+```json
+{
+  "projects": {
+    "default": "your-firebase-project-id"
+  }
+}
+```
+
+### 5. Install function dependencies
+
+```bash
+cd functions && npm install && cd ..
+```
+
+### 6. Deploy everything
+
+```bash
+firebase deploy
+```
+
+Your app URL prints at the end:
+```
+✔  Hosting URL: https://your-project-id.web.app
+```
+
+---
+
+## User flow
+
+1. User visits your URL → if not logged in, redirected to **`/login.html`**
+2. Sign up with email + password (or sign in if returning)
+3. First visit after signup → redirected to **`/setup.html`** (no Notion credentials yet)
+4. Setup wizard: choose Notion or Google Sheets → enter credentials → **Test & Save**
+5. Redirected to the **dashboard** — auto-refreshes every 60 seconds
+
+Credentials are saved to `Firestore: users/{uid}/private/credentials`.  
+Firestore rules ensure only the account owner can access their own data.
+
+---
+
+## Notion database requirements
+
+Your Notion database must have these exact property names:
+
+| Property | Type |
+|---|---|
+| Guest Name | Title |
+| Source | Text |
+| Invitation Date | Date |
+| Briefing Date | Date |
+| Interview Date | Date |
+| Notes | Text |
+| Offer Made | Checkbox |
+| Assets Created | Checkbox |
+| Assets Shared | Checkbox |
+| Published Mini-Talk to YouTube | Checkbox |
+| Reels & Stories #1 Published | Checkbox |
+| Reels & Stories #2 Published | Checkbox |
+| Reels & Stories #3 Published | Checkbox |
+
+**Notion integration setup:**
+1. [notion.so/my-integrations](https://www.notion.so/my-integrations) → New integration → copy the token
+2. In Notion: open your database → `···` → Connections → select your integration
+3. Enter the token and database ID in the setup wizard
+
+---
+
+## 📊 Google Sheets (read-only mode)
+
+Your spreadsheet must have these headers in **row 1, in this order**:
 
 | Col | Header |
 |-----|--------|
@@ -46,31 +146,77 @@ Your sheet must have these column headers **in row 1, in this order**:
 | L | Reels 2 Published |
 | M | Reels 3 Published |
 
-- Dates: `YYYY-MM-DD` format
-- Checkboxes: `TRUE` / `FALSE`
+- Dates: `YYYY-MM-DD` format (or `DD/MM/YYYY`)
+- Booleans: `TRUE` / `FALSE`
+- Publish the sheet: **File → Share → Publish to web → CSV**
 
-Then publish the sheet: **File → Share → Publish to web → CSV** and paste the URL into the setup wizard.
-
-> **Note:** Google Sheets is read-only. Add and edit guests directly in your sheet; the dashboard reflects changes on the next refresh.
+Google Sheets is read-only — the "Add Guest" button is hidden in this mode.
 
 ---
 
-## 💻 Run locally
+## Local development
 
 ```bash
-git clone https://github.com/nikhilrughani/ai-agents.git
-cd ai-agents/mini-talks-dashboard
-npm install
-npm start
-# Open http://localhost:3000 — setup wizard runs on first visit
+firebase emulators:start
+# Open http://localhost:5000
 ```
 
-Or double-click **`Launch Mini-Talks.command`** (Mac only).
+The emulator UI (Auth + Firestore inspector) is at `http://localhost:4000`.
 
 ---
 
-## Pipeline stages
+## Selling subscriptions
 
-**Outreach Sent → Briefing Booked → Briefing Done → Interview Booked → Interview Done → Published**
+Each subscriber gets their own Firebase Auth account.
 
-Stage is calculated automatically from your dates and the Published checkbox — no manual status field needed.
+| Option | How |
+|---|---|
+| **Self-service** | Subscribers sign up at `/login.html` — free |
+| **Invite only** | Disable public signups in Firebase Auth → create accounts manually |
+| **Paid gating** | Add a Stripe webhook that calls Firebase Admin to create accounts after payment |
+
+Subscriber Notion tokens never leave their own Firestore document — not even you as admin can read them.
+
+---
+
+## Overdue rules
+
+| Situation | Flagged after |
+|---|---|
+| Outreach sent, no briefing booked | 14 days |
+| Briefing done, no interview scheduled | 7 days |
+| Interview done, not published | 14 days |
+
+---
+
+## Cost estimate (Firebase Blaze plan)
+
+For 50 subscribers checking the dashboard a few times a day — **effectively $0/month**.
+
+| Service | Free tier | Typical cost |
+|---|---|---|
+| Hosting | 10 GB / 360 MB/day | ~$0 |
+| Functions | 2M invocations/month | ~$0–$1 |
+| Firestore | 1 GB / 50K reads/day | ~$0 |
+| Auth | Unlimited MAUs | $0 |
+
+---
+
+## File structure
+
+```
+mini-talks-dashboard/
+├── public/                  ← Firebase Hosting (frontend)
+│   ├── index.html           ← Dashboard (auth-gated, auto-refresh)
+│   ├── login.html           ← Sign in / Sign up / Password reset
+│   └── setup.html           ← Data source credentials wizard
+│
+├── functions/               ← Cloud Functions (Node.js API)
+│   ├── index.js             ← /api/dashboard · /api/guests · /api/setup
+│   └── package.json
+│
+├── firebase.json            ← Hosting + Functions + Emulator config
+├── .firebaserc              ← Your Firebase project ID ← EDIT THIS
+├── firestore.rules          ← Per-user data isolation
+└── firestore.indexes.json
+```

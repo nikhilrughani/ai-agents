@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — Mini-Talks Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #0e0f14; --surface:  #16181f; --surface2: #1e2029;
+      --border:  #2a2d3a; --text:     #e8eaf0; --muted:    #7a7f96;
+      --accent:  #4bb8d0; --green:    #34d399; --red:      #f87171;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 24px;
+    }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 18px; width: 100%; max-width: 420px; overflow: hidden;
+    }
+    .card-header {
+      padding: 30px 30px 22px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+    .nr-badge {
+      width: 52px; height: 52px; border-radius: 12px; background: #2a2d3a;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; font-weight: 900; letter-spacing: -0.04em;
+      color: #e8eaf0; flex-shrink: 0;
+    }
+    .nr-badge .nr-dot { color: #4bb8d0; }
+    .logo-row h1 { font-size: 1.2rem; font-weight: 700; line-height: 1.2; }
+    .logo-sub { font-size: .75rem; color: var(--muted); margin-top: 3px; }
+    .card-header p { font-size: .84rem; color: var(--muted); line-height: 1.5; }
+
+    /* Tabs */
+    .tabs { display: flex; border-bottom: 1px solid var(--border); }
+    .tab {
+      flex: 1; padding: 14px 20px; font-size: .82rem; font-weight: 600;
+      color: var(--muted); text-align: center; cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all .2s;
+    }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    .panel { display: none; padding: 28px 30px; }
+    .panel.active { display: block; }
+
+    /* Fields */
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block; font-size: .73rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+    }
+    .field input {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 13px; color: var(--text); font-size: .9rem;
+      outline: none; transition: border-color .15s; font-family: inherit;
+    }
+    .field input:focus { border-color: var(--accent); }
+    .field .hint { font-size: .72rem; color: var(--muted); margin-top: 4px; }
+
+    .btn {
+      display: block; width: 100%; padding: 12px; border-radius: 9px;
+      border: none; background: var(--accent); color: #fff;
+      font-size: .95rem; font-weight: 700; cursor: pointer;
+      transition: opacity .15s; margin-top: 6px;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .divider {
+      display: flex; align-items: center; gap: 10px;
+      margin: 20px 0; color: var(--muted); font-size: .75rem;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    .error-box {
+      background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3);
+      border-radius: 8px; padding: 10px 14px; font-size: .8rem; color: var(--red);
+      margin-bottom: 14px; display: none;
+    }
+    .success-box {
+      background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.3);
+      border-radius: 8px; padding: 10px 14px; font-size: .8rem; color: var(--green);
+      margin-bottom: 14px; display: none;
+    }
+
+    .reset-link {
+      text-align: center; margin-top: 14px; font-size: .78rem; color: var(--muted);
+    }
+    .reset-link a { color: var(--accent); cursor: pointer; text-decoration: none; }
+    .reset-link a:hover { text-decoration: underline; }
+
+    footer {
+      margin-top: 20px; font-size: .72rem; color: var(--muted); text-align: center;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* Loading overlay */
+    .init-overlay {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; align-items: center; justify-content: center; z-index: 99;
+    }
+    .init-overlay.hidden { display: none; }
+    .spinner {
+      width: 34px; height: 34px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Reset panel */
+    #reset-panel { padding: 28px 30px; display: none; }
+  </style>
+</head>
+<body>
+
+<div class="init-overlay" id="init-overlay">
+  <div class="spinner"></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="logo-row">
+      <div class="nr-badge">nr<span class="nr-dot">.</span></div>
+      <div>
+        <h1>Mini-Talks Pipeline</h1>
+        <div class="logo-sub">by <a href="https://nikhilrughani.com" target="_blank" style="color:#4bb8d0;text-decoration:none;font-weight:600">Nikhil Rughani</a></div>
+      </div>
+    </div>
+    <p>Sign in to access your pipeline dashboard, or create an account to get started.</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" id="tab-signin" onclick="switchTab('signin')">Sign In</div>
+    <div class="tab" id="tab-signup" onclick="switchTab('signup')">Create Account</div>
+  </div>
+
+  <!-- Sign In panel -->
+  <div class="panel active" id="panel-signin">
+    <div class="error-box"   id="signin-error"></div>
+    <div class="success-box" id="signin-success"></div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="signin-password" placeholder="Your password" autocomplete="current-password" />
+      <div class="hint">Forgot your password? <a id="forgot-link" style="color:var(--accent);cursor:pointer">Reset it here →</a></div>
+    </div>
+    <button class="btn" id="signin-btn" onclick="signIn()">Sign In →</button>
+  </div>
+
+  <!-- Sign Up panel -->
+  <div class="panel" id="panel-signup">
+    <div class="error-box" id="signup-error"></div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="signup-email" placeholder="you@example.com" autocomplete="email" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="signup-password" placeholder="Choose a password (min 8 chars)" autocomplete="new-password" />
+    </div>
+    <div class="field">
+      <label>Confirm Password</label>
+      <input type="password" id="signup-confirm" placeholder="Repeat your password" autocomplete="new-password" />
+    </div>
+    <button class="btn" id="signup-btn" onclick="signUp()">Create Account →</button>
+  </div>
+
+  <!-- Password Reset panel (shown inline) -->
+  <div id="reset-panel">
+    <div class="error-box"   id="reset-error"></div>
+    <div class="success-box" id="reset-success"></div>
+    <div class="field">
+      <label>Your Email Address</label>
+      <input type="email" id="reset-email" placeholder="you@example.com" autocomplete="email" />
+    </div>
+    <button class="btn" id="reset-btn" onclick="sendReset()">Send Reset Email →</button>
+    <div class="reset-link"><a onclick="showTab()">← Back to Sign In</a></div>
+  </div>
+</div>
+
+<footer>
+  Mini-Talks Dashboard &nbsp;·&nbsp;
+  Built by <a href="https://nikhilrughani.com" target="_blank">Nikhil Rughani</a>
+</footer>
+
+<!-- Firebase SDK (auto-configured by Firebase Hosting) -->
+<script src="/__/firebase/10.12.0/firebase-app-compat.js"></script>
+<script src="/__/firebase/10.12.0/firebase-auth-compat.js"></script>
+<script src="/__/firebase/init.js"></script>
+
+<script>
+  const auth = firebase.auth();
+
+  // ── Redirect if already signed in ─────────────────────────────────────────
+  auth.onAuthStateChanged(user => {
+    document.getElementById("init-overlay").classList.add("hidden");
+    if (user) {
+      window.location.replace("/");
+    }
+  });
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  function switchTab(name) {
+    ["signin","signup"].forEach(t => {
+      document.getElementById(`tab-${t}`).classList.toggle("active", t === name);
+      document.getElementById(`panel-${t}`).classList.toggle("active", t === name);
+    });
+    document.getElementById("reset-panel").style.display = "none";
+    document.getElementById("panel-signin").style.display = name === "signin" ? "block" : "none";
+    document.getElementById("panel-signup").style.display = name === "signup" ? "block" : "none";
+    clearErrors();
+  }
+
+  // Show reset panel
+  document.getElementById("forgot-link").onclick = () => {
+    document.getElementById("panel-signin").style.display = "none";
+    document.getElementById("reset-panel").style.display  = "block";
+    document.getElementById("tabs")?.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  };
+
+  function showTab() {
+    document.getElementById("reset-panel").style.display  = "none";
+    document.getElementById("panel-signin").style.display = "block";
+    document.getElementById("tab-signin").classList.add("active");
+  }
+
+  function clearErrors() {
+    ["signin-error","signup-error","reset-error","signin-success","reset-success"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.style.display = "none"; el.textContent = ""; }
+    });
+  }
+
+  function showError(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg; el.style.display = "block";
+  }
+  function showSuccess(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg; el.style.display = "block";
+  }
+
+  function friendlyError(code) {
+    const map = {
+      "auth/user-not-found":      "No account found with that email.",
+      "auth/wrong-password":      "Incorrect password. Please try again.",
+      "auth/invalid-credential":  "Email or password is incorrect.",
+      "auth/email-already-in-use":"An account with this email already exists.",
+      "auth/weak-password":       "Password must be at least 8 characters.",
+      "auth/invalid-email":       "Please enter a valid email address.",
+      "auth/too-many-requests":   "Too many attempts. Please wait a moment and try again.",
+      "auth/network-request-failed": "Network error. Check your internet connection.",
+    };
+    return map[code] || "An error occurred. Please try again.";
+  }
+
+  // ── Sign In ───────────────────────────────────────────────────────────────
+  async function signIn() {
+    clearErrors();
+    const email    = document.getElementById("signin-email").value.trim();
+    const password = document.getElementById("signin-password").value;
+    if (!email || !password) return showError("signin-error", "Please fill in all fields.");
+    const btn = document.getElementById("signin-btn");
+    btn.disabled = true; btn.textContent = "Signing in…";
+    try {
+      await auth.signInWithEmailAndPassword(email, password);
+      // onAuthStateChanged will handle the redirect
+    } catch (err) {
+      showError("signin-error", friendlyError(err.code));
+      btn.disabled = false; btn.textContent = "Sign In →";
+    }
+  }
+
+  // ── Sign Up ───────────────────────────────────────────────────────────────
+  async function signUp() {
+    clearErrors();
+    const email    = document.getElementById("signup-email").value.trim();
+    const password = document.getElementById("signup-password").value;
+    const confirm  = document.getElementById("signup-confirm").value;
+    if (!email || !password || !confirm) return showError("signup-error", "Please fill in all fields.");
+    if (password !== confirm) return showError("signup-error", "Passwords do not match.");
+    if (password.length < 8) return showError("signup-error", "Password must be at least 8 characters.");
+    const btn = document.getElementById("signup-btn");
+    btn.disabled = true; btn.textContent = "Creating account…";
+    try {
+      await auth.createUserWithEmailAndPassword(email, password);
+      // onAuthStateChanged will redirect → will land on setup page (no credentials yet)
+    } catch (err) {
+      showError("signup-error", friendlyError(err.code));
+      btn.disabled = false; btn.textContent = "Create Account →";
+    }
+  }
+
+  // ── Password Reset ────────────────────────────────────────────────────────
+  async function sendReset() {
+    clearErrors();
+    const email = document.getElementById("reset-email").value.trim();
+    if (!email) return showError("reset-error", "Please enter your email address.");
+    const btn = document.getElementById("reset-btn");
+    btn.disabled = true; btn.textContent = "Sending…";
+    try {
+      await auth.sendPasswordResetEmail(email);
+      showSuccess("reset-success", "Reset email sent! Check your inbox (including spam).");
+    } catch (err) {
+      showError("reset-error", friendlyError(err.code));
+    }
+    btn.disabled = false; btn.textContent = "Send Reset Email →";
+  }
+
+  // Enter key submits on Sign In
+  document.getElementById("signin-password").addEventListener("keydown", e => {
+    if (e.key === "Enter") signIn();
+  });
+  document.getElementById("signup-confirm").addEventListener("keydown", e => {
+    if (e.key === "Enter") signUp();
+  });
+</script>
+</body>
+</html>

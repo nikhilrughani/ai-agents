@@ -1,4 +1,10 @@
 node_modules/
+functions/node_modules/
 .env
+.env.local
 .DS_Store
 *.log
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

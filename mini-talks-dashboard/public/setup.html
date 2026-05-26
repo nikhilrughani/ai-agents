@@ -18,8 +18,7 @@
     .card-header { padding:28px 30px 20px; border-bottom:1px solid var(--border); }
     .logo-row { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
     .nr-badge {
-      width:52px; height:52px; border-radius:12px;
-      background:#2a2d3a;
+      width:52px; height:52px; border-radius:12px; background:#2a2d3a;
       display:flex; align-items:center; justify-content:center;
       font-size:1.4rem; font-weight:900; letter-spacing:-0.04em; color:#e8eaf0; flex-shrink:0;
     }
@@ -27,6 +26,15 @@
     .logo-row h1 { font-size:1.2rem; font-weight:700; line-height:1.2; }
     .logo-row .logo-sub { font-size:.75rem; color:var(--muted); margin-top:3px; }
     .card-header p { font-size:.85rem; color:var(--muted); line-height:1.5; }
+
+    /* User info strip */
+    .user-strip {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 30px; background:var(--surface2); border-bottom:1px solid var(--border);
+      font-size:.75rem; color:var(--muted);
+    }
+    .user-strip a { color:var(--accent); cursor:pointer; text-decoration:none; }
+    .user-strip a:hover { text-decoration:underline; }
 
     /* Steps */
     .steps { display:flex; gap:0; border-bottom:1px solid var(--border); }
@@ -44,7 +52,7 @@
       padding:20px 16px; cursor:pointer; transition:all .2s; text-align:center;
     }
     .source-card:hover  { border-color:var(--accent); }
-    .source-card.active { border-color:var(--accent); background:rgba(108,99,255,.1); }
+    .source-card.active { border-color:var(--accent); background:rgba(75,184,208,.08); }
     .source-icon { font-size:2rem; margin-bottom:10px; }
     .source-name { font-size:.9rem; font-weight:700; }
     .source-desc { font-size:.72rem; color:var(--muted); margin-top:4px; line-height:1.4; }
@@ -88,11 +96,25 @@
     .btn-launch:hover { opacity:.85; }
 
     footer { margin-top:20px; font-size:.72rem; color:var(--muted); text-align:center; }
+
+    /* Loading overlay */
+    .init-overlay {
+      position:fixed; inset:0; background:var(--bg);
+      display:flex; align-items:center; justify-content:center; z-index:99;
+    }
+    .init-overlay.hidden { display:none; }
+    .spinner { width:34px; height:34px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+    @keyframes spin { to{transform:rotate(360deg)} }
   </style>
 </head>
 <body>
 
-<div class="card">
+<div class="init-overlay" id="init-overlay">
+  <div class="spinner"></div>
+</div>
+
+<div class="card" id="main-card" style="display:none">
+
   <div class="card-header">
     <div class="logo-row">
       <div class="nr-badge">nr<span class="nr-dot">.</span></div>
@@ -102,6 +124,12 @@
       </div>
     </div>
     <p>Connect your data source and your pipeline will be live in under a minute.</p>
+  </div>
+
+  <!-- Logged-in user strip -->
+  <div class="user-strip">
+    <span>Signed in as <strong id="user-email">…</strong></span>
+    <a onclick="signOut()">Sign Out</a>
   </div>
 
   <!-- Step tabs -->
@@ -180,14 +208,14 @@
       </div>
     </div>
 
-    <button class="btn btn-primary" onclick="testConnection()" id="btn-test" style="width:100%;margin-top:4px">
-      Test Connection
+    <button class="btn btn-primary" onclick="testAndSave()" id="btn-test" style="width:100%;margin-top:4px">
+      Test &amp; Save Connection
     </button>
     <div class="test-result" id="test-result"></div>
 
     <div class="btn-row" style="margin-top:16px">
       <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
-      <button class="btn btn-primary" id="btn-next2" onclick="goStep(3)" disabled>Save &amp; Launch →</button>
+      <button class="btn btn-primary" id="btn-next2" onclick="goStep(3)" disabled>Continue →</button>
     </div>
   </div>
 
@@ -195,8 +223,8 @@
   <div class="step-panel" id="panel-3">
     <div class="success-icon">🎉</div>
     <div class="success-title">You're all set!</div>
-    <div class="success-sub">Your credentials are saved in this browser. Your pipeline dashboard is ready.</div>
-    <button class="btn-launch" onclick="launch()">Open Dashboard →</button>
+    <div class="success-sub">Your credentials are saved securely to your account. Your pipeline dashboard is ready.</div>
+    <button class="btn-launch" onclick="window.location.href='/'">Open Dashboard →</button>
     <p style="font-size:.72rem;color:var(--muted);text-align:center;margin-top:14px">
       Want to change your settings later? Click the ⚙️ icon in the dashboard header.
     </p>
@@ -207,13 +235,38 @@
 <footer>
   Mini-Talks Dashboard &nbsp;·&nbsp;
   Built by <a href="https://nikhilrughani.com" target="_blank" style="color:var(--accent);text-decoration:none">Nikhil Rughani</a>
-  &nbsp;·&nbsp; your data never leaves your browser
+  &nbsp;·&nbsp; credentials stored securely in your account
 </footer>
 
-<script>
-  let selectedSource = "notion";
-  let connectionVerified = false;
+<!-- Firebase SDK (auto-configured by Firebase Hosting) -->
+<script src="/__/firebase/10.12.0/firebase-app-compat.js"></script>
+<script src="/__/firebase/10.12.0/firebase-auth-compat.js"></script>
+<script src="/__/firebase/init.js"></script>
 
+<script>
+  const auth = firebase.auth();
+  let currentUser = null;
+  let selectedSource = "notion";
+
+  // ── Auth gate ──────────────────────────────────────────────────────────────
+  auth.onAuthStateChanged(user => {
+    if (!user) {
+      window.location.replace("/login.html");
+      return;
+    }
+    currentUser = user;
+    document.getElementById("user-email").textContent = user.email;
+    document.getElementById("init-overlay").classList.add("hidden");
+    document.getElementById("main-card").style.display = "block";
+  });
+
+  // ── Sign out ───────────────────────────────────────────────────────────────
+  async function signOut() {
+    await auth.signOut();
+    window.location.replace("/login.html");
+  }
+
+  // ── Source picker ──────────────────────────────────────────────────────────
   function selectSource(src) {
     selectedSource = src;
     document.getElementById("src-notion").classList.toggle("active", src === "notion");
@@ -230,13 +283,20 @@
     if (n === 2) {
       document.getElementById("notion-fields").style.display = selectedSource === "notion" ? "block" : "none";
       document.getElementById("sheets-fields").style.display = selectedSource === "sheets" ? "block" : "none";
-      connectionVerified = false;
       document.getElementById("btn-next2").disabled = true;
       document.getElementById("test-result").style.display = "none";
     }
   }
 
-  async function testConnection() {
+  function extractDbId(raw) {
+    const m = raw.match(/([a-f0-9]{32})/i);
+    return m ? m[1] : raw.replace(/-/g,"");
+  }
+
+  // ── Test + Save ────────────────────────────────────────────────────────────
+  // Sends credentials to the Cloud Function which tests the connection
+  // AND saves them to Firestore server-side.
+  async function testAndSave() {
     const btn      = document.getElementById("btn-test");
     const resultEl = document.getElementById("test-result");
     const next     = document.getElementById("btn-next2");
@@ -244,20 +304,33 @@
     btn.disabled = true;
     btn.textContent = "Testing…";
     resultEl.style.display = "none";
-    connectionVerified = false;
     next.disabled = true;
 
-    const headers = buildHeaders();
-
     try {
-      const res  = await fetch("/api/test-connection", { method:"POST", headers });
+      const token = await currentUser.getIdToken();
+
+      const body = { source: selectedSource };
+      if (selectedSource === "notion") {
+        body.notionToken = document.getElementById("notion-token").value.trim();
+        body.notionDbId  = extractDbId(document.getElementById("notion-db").value.trim());
+      } else {
+        body.sheetsUrl = document.getElementById("sheets-url").value.trim();
+      }
+
+      const res  = await fetch("/api/setup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
       const data = await res.json();
+
       if (data.ok) {
         resultEl.className = "test-result ok";
-        resultEl.textContent = `✅ Connected! Found ${data.count} guest${data.count !== 1 ? "s" : ""} in your database.`;
-        connectionVerified = true;
+        resultEl.textContent = `✅ Connected! Found ${data.count} guest${data.count !== 1 ? "s" : ""} in your database. Credentials saved to your account.`;
         next.disabled = false;
-        saveCredentials();
       } else {
         throw new Error(data.error || "Connection failed");
       }
@@ -268,50 +341,8 @@
 
     resultEl.style.display = "block";
     btn.disabled = false;
-    btn.textContent = "Test Connection";
+    btn.textContent = "Test & Save Connection";
   }
-
-  function buildHeaders() {
-    const h = { "Content-Type":"application/json", "x-data-source": selectedSource };
-    if (selectedSource === "notion") {
-      h["x-notion-token"] = document.getElementById("notion-token").value.trim();
-      h["x-notion-db-id"] = extractDbId(document.getElementById("notion-db").value.trim());
-    } else {
-      h["x-sheets-url"] = document.getElementById("sheets-url").value.trim();
-    }
-    return h;
-  }
-
-  function extractDbId(raw) {
-    // Accept full Notion URL or bare ID
-    const m = raw.match(/([a-f0-9]{32})/i);
-    return m ? m[1] : raw.replace(/-/g,"");
-  }
-
-  function saveCredentials() {
-    const creds = { source: selectedSource };
-    if (selectedSource === "notion") {
-      creds.notionToken = document.getElementById("notion-token").value.trim();
-      creds.notionDbId  = extractDbId(document.getElementById("notion-db").value.trim());
-    } else {
-      creds.sheetsUrl = document.getElementById("sheets-url").value.trim();
-    }
-    localStorage.setItem("miniTalksCreds", JSON.stringify(creds));
-  }
-
-  function launch() {
-    saveCredentials();
-    window.location.href = "/";
-  }
-
-  // Pre-fill from localStorage if returning to setup
-  window.addEventListener("DOMContentLoaded", () => {
-    const saved = JSON.parse(localStorage.getItem("miniTalksCreds") || "{}");
-    if (saved.source === "sheets") selectSource("sheets");
-    if (saved.notionToken) document.getElementById("notion-token").value = saved.notionToken;
-    if (saved.notionDbId)  document.getElementById("notion-db").value    = saved.notionDbId;
-    if (saved.sheetsUrl)   document.getElementById("sheets-url").value   = saved.sheetsUrl;
-  });
 </script>
 </body>
 </html>
