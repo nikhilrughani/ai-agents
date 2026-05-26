@@ -5,17 +5,11 @@ const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(express.json());
+app.use(express.json({ limit: "2mb" })); // allow CSV payloads
 
 // ─── Firebase config ──────────────────────────────────────────────────────────
-// Only the project ID is needed — no service account, no secrets.
-// Firebase ID tokens are verified using Firebase's PUBLIC certificate endpoint.
-// Firestore is accessed via REST API using the user's own ID token — the
-// Firestore security rules (users can only touch their own documents) do the
-// access control, so no admin privileges are required.
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
 
-// Lazy-loaded JWKS verifier (only imported when Firebase mode is active)
 let _verifyToken = null;
 async function verifyFirebaseToken(token) {
   if (!_verifyToken) {
@@ -35,51 +29,103 @@ async function verifyFirebaseToken(token) {
 }
 
 // ─── Firestore REST helpers ───────────────────────────────────────────────────
-// These use the *user's own* Firebase ID token, so Firestore security rules
-// apply — each user can only read/write their own documents.
-const FS_BASE = () =>
+const FS = () =>
   `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
-function fsToObj(doc) {
+// Convert Firestore field value → JS value
+function fsVal(v) {
+  if (v === undefined || v === null) return null;
+  if (v.stringValue  !== undefined) return v.stringValue;
+  if (v.booleanValue !== undefined) return v.booleanValue;
+  if (v.nullValue    !== undefined) return null;
+  return null;
+}
+
+// Convert JS value → Firestore field value
+function toFsVal(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "boolean") return { booleanValue: v };
+  return { stringValue: String(v) };
+}
+
+// Convert Firestore document → plain object
+function docToObj(doc) {
   if (!doc?.fields) return null;
   const obj = {};
-  for (const [k, v] of Object.entries(doc.fields)) {
-    if (v.stringValue  !== undefined) obj[k] = v.stringValue;
-    if (v.booleanValue !== undefined) obj[k] = v.booleanValue;
-  }
+  for (const [k, v] of Object.entries(doc.fields)) obj[k] = fsVal(v);
   return obj;
 }
 
-function objToFs(obj) {
+// Convert plain object → Firestore fields map
+function objToFields(obj) {
   const fields = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (typeof v === "string")  fields[k] = { stringValue: v };
-    if (typeof v === "boolean") fields[k] = { booleanValue: v };
-  }
-  return { fields };
+  for (const [k, v] of Object.entries(obj)) fields[k] = toFsVal(v);
+  return fields;
 }
 
+// GET a single document
 async function fsGet(docPath, token) {
-  const res = await fetch(`${FS_BASE()}/${docPath}`, {
+  const res = await fetch(`${FS()}/${docPath}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Firestore read failed (${res.status})`);
-  return fsToObj(await res.json());
+  if (!res.ok) throw new Error(`Firestore GET failed (${res.status})`);
+  return docToObj(await res.json());
 }
 
+// SET (create or overwrite) a document
 async function fsSet(docPath, data, token) {
-  const res = await fetch(`${FS_BASE()}/${docPath}`, {
+  const res = await fetch(`${FS()}/${docPath}`, {
     method: "PATCH",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(objToFs(data)),
+    body: JSON.stringify({ fields: objToFields(data) }),
   });
-  if (!res.ok) throw new Error(`Firestore write failed (${res.status})`);
+  if (!res.ok) throw new Error(`Firestore SET failed (${res.status})`);
+  return docToObj(await res.json());
+}
+
+// LIST documents in a collection (up to 300)
+async function fsList(collPath, token) {
+  const res = await fetch(`${FS()}/${collPath}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`Firestore LIST failed (${res.status})`);
+  const body = await res.json();
+  if (!body.documents) return [];
+  return body.documents.map(doc => ({
+    ...docToObj(doc),
+    id: doc.name.split("/").pop(),
+  }));
+}
+
+// CREATE a document with auto-generated ID
+async function fsCreate(collPath, data, token) {
+  const res = await fetch(`${FS()}/${collPath}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: objToFields(data) }),
+  });
+  if (!res.ok) throw new Error(`Firestore CREATE failed (${res.status})`);
+  const doc = await res.json();
+  return { ...docToObj(doc), id: doc.name.split("/").pop() };
+}
+
+// UPDATE specific fields in a document (merge patch)
+async function fsUpdate(docPath, data, token) {
+  // Build updateMask from keys
+  const fieldPaths = Object.keys(data).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+  const res = await fetch(`${FS()}/${docPath}?${fieldPaths}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: objToFields(data) }),
+  });
+  if (!res.ok) throw new Error(`Firestore UPDATE failed (${res.status})`);
+  return docToObj(await res.json());
 }
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 async function requireAuth(req, res, next) {
-  // ── Firebase mode (FIREBASE_PROJECT_ID set) ──
   if (FIREBASE_PROJECT_ID) {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
@@ -97,17 +143,43 @@ async function requireAuth(req, res, next) {
       return res.status(401).json({ error: "Invalid or expired session. Please log in again." });
     }
   }
-
-  // ── Local / single-user dev mode (.env fallback) ──
-  console.log("⚙️  Dev mode — reading credentials from .env");
+  // Local dev fallback
   req.uid   = "local";
   req.creds = {
     source:      (process.env.DATA_SOURCE || "notion").toLowerCase(),
-    notionToken: process.env.NOTION_TOKEN        || "",
-    notionDbId:  process.env.NOTION_DATABASE_ID  || "",
-    sheetsUrl:   process.env.SHEETS_URL          || "",
+    notionToken: process.env.NOTION_TOKEN       || "",
+    notionDbId:  process.env.NOTION_DATABASE_ID || "",
+    sheetsUrl:   process.env.SHEETS_URL         || "",
   };
   next();
+}
+
+// ─── Guest shape helpers ──────────────────────────────────────────────────────
+function emptyGuest(overrides = {}) {
+  return {
+    name: "Unnamed", source: "", notes: "",
+    invitationDate: null, briefingDate: null, interviewDate: null,
+    published: false, offerMade: false,
+    assetsCreated: false, assetsShared: false,
+    reels1: false, reels2: false, reels3: false,
+    ...overrides,
+  };
+}
+
+// ─── Firestore guest adapter ──────────────────────────────────────────────────
+async function fetchGuestsFromFirestore(uid, token) {
+  const docs = await fsList(`users/${uid}/guests`, token);
+  return docs.map(d => emptyGuest(d));
+}
+
+async function createGuestInFirestore(uid, token, data) {
+  const doc = await fsCreate(`users/${uid}/guests`, emptyGuest(data), token);
+  return emptyGuest(doc);
+}
+
+async function updateGuestInFirestore(uid, token, guestId, updates) {
+  const doc = await fsUpdate(`users/${uid}/guests/${guestId}`, updates, token);
+  return emptyGuest({ ...doc, id: guestId });
 }
 
 // ─── Notion property helpers ──────────────────────────────────────────────────
@@ -134,7 +206,6 @@ function getCheckbox(page, name) {
   return p?.type === "checkbox" ? p.checkbox === true : false;
 }
 
-// ─── Notion adapter ───────────────────────────────────────────────────────────
 function notionPageToGuest(page) {
   const bd  = getDate(page, "Briefing Date")   || getDate(page, "Briefing");
   const id  = getDate(page, "Interview Date")  || getDate(page, "Interview");
@@ -179,7 +250,7 @@ function normalizeSheetsUrl(raw) {
   if (m) return `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv`;
   if (/^[a-zA-Z0-9-_]{20,}$/.test(raw.trim()))
     return `https://docs.google.com/spreadsheets/d/${raw.trim()}/export?format=csv`;
-  throw new Error("Couldn't recognise the Google Sheets URL. Please use the full URL or a publish-to-web CSV link.");
+  throw new Error("Couldn't recognise the Google Sheets URL.");
 }
 
 function parseCSV(text) {
@@ -221,26 +292,39 @@ function parseISODate(v) {
   return null;
 }
 
+function csvRowToGuest(cols) {
+  return emptyGuest({
+    name:           cols[0] || "Unnamed",
+    source:         cols[1] || "",
+    invitationDate: parseISODate(cols[2]),
+    briefingDate:   parseISODate(cols[3]),
+    interviewDate:  parseISODate(cols[4]),
+    notes:          cols[5] || "",
+    offerMade:      parseBool(cols[6]),
+    assetsCreated:  parseBool(cols[7]),
+    assetsShared:   parseBool(cols[8]),
+    published:      parseBool(cols[9]),
+    reels1:         parseBool(cols[10]),
+    reels2:         parseBool(cols[11]),
+    reels3:         parseBool(cols[12]),
+  });
+}
+
 async function fetchGuestsFromSheets(url) {
   const csvUrl = normalizeSheetsUrl(url);
   const res = await fetch(csvUrl);
   if (!res.ok) throw new Error(`Google Sheets returned ${res.status}. Make sure the sheet is published to the web.`);
   const rows = parseCSV(await res.text());
   if (rows.length < 2) return [];
-  return rows.slice(1).filter(r => r[0]).map((cols, i) => ({
-    id: `sheet-${i}`, name: cols[0]||"Unnamed", source: cols[1]||"",
-    invitationDate: parseISODate(cols[2]), briefingDate: parseISODate(cols[3]),
-    interviewDate:  parseISODate(cols[4]), notes: cols[5]||"",
-    offerMade: parseBool(cols[6]), assetsCreated: parseBool(cols[7]),
-    assetsShared: parseBool(cols[8]), published: parseBool(cols[9]),
-    reels1: parseBool(cols[10]), reels2: parseBool(cols[11]), reels3: parseBool(cols[12]),
-  }));
+  return rows.slice(1).filter(r => r[0]).map((cols, i) =>
+    ({ ...csvRowToGuest(cols), id: `sheet-${i}` })
+  );
 }
 
-async function fetchGuests(creds) {
-  return creds.source === "sheets"
-    ? fetchGuestsFromSheets(creds.sheetsUrl)
-    : fetchGuestsFromNotion(creds.notionToken, creds.notionDbId);
+async function fetchGuests(creds, uid, token) {
+  if (creds.source === "firestore") return fetchGuestsFromFirestore(uid, token);
+  if (creds.source === "sheets")    return fetchGuestsFromSheets(creds.sheetsUrl);
+  return fetchGuestsFromNotion(creds.notionToken, creds.notionDbId);
 }
 
 // ─── Stage classification ─────────────────────────────────────────────────────
@@ -284,18 +368,12 @@ function buildDashboard(rawGuests, source) {
     const inv = g.invitationDate ? new Date(g.invitationDate+ "T12:00:00") : null;
     if (id  && id  >= weekStart && id  < weekEnd && id  < now) weeklyInterviews++;
     if (bd  && bd  >= weekStart && bd  < weekEnd && bd  < now) weeklyBriefings++;
-    if (g.stage === "Briefing Done" && bd) {
-      const age = daysSince(g.briefingDate);
-      if (age >= 7)  overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue:age-7,  reason:`Briefing done ${age}d ago — no interview scheduled` });
-    }
-    if (g.stage === "Interview Done" && id) {
-      const age = daysSince(g.interviewDate);
-      if (age >= 14) overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue:age-14, reason:`Interview done ${age}d ago — not yet published` });
-    }
-    if (g.stage === "Outreach Sent" && inv) {
-      const age = daysSince(g.invitationDate);
-      if (age >= 14) overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue:age-14, reason:`Outreach sent ${age}d ago — no briefing booked` });
-    }
+    if (g.stage === "Briefing Done"  && bd && daysSince(g.briefingDate)  >= 7)
+      overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue: daysSince(g.briefingDate) - 7,  reason:`Briefing done ${daysSince(g.briefingDate)}d ago — no interview scheduled` });
+    if (g.stage === "Interview Done" && id && daysSince(g.interviewDate) >= 14)
+      overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue: daysSince(g.interviewDate) - 14, reason:`Interview done ${daysSince(g.interviewDate)}d ago — not yet published` });
+    if (g.stage === "Outreach Sent"  && inv && daysSince(g.invitationDate) >= 14)
+      overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue: daysSince(g.invitationDate) - 14, reason:`Outreach sent ${daysSince(g.invitationDate)}d ago — no briefing booked` });
   }
   overdue.sort((a,b) => b.daysOverdue - a.daysOverdue);
 
@@ -316,19 +394,19 @@ function buildDashboard(rawGuests, source) {
 // ─── Notion write helpers ─────────────────────────────────────────────────────
 function buildNotionProperties(updates) {
   const p = {};
-  if (updates.name          !== undefined) p["Guest Name"]                         = { title:     [{ text:{ content: updates.name } }] };
-  if (updates.source        !== undefined) p["Source"]                             = { rich_text: [{ text:{ content: updates.source } }] };
-  if (updates.notes         !== undefined) p["Notes"]                              = { rich_text: [{ text:{ content: updates.notes||"" } }] };
-  if ("invitationDate" in updates) p["Invitation Date"]                            = updates.invitationDate ? { date:{ start:updates.invitationDate } } : { date:null };
-  if ("briefingDate"   in updates) p["Briefing Date"]                              = updates.briefingDate   ? { date:{ start:updates.briefingDate   } } : { date:null };
-  if ("interviewDate"  in updates) p["Interview Date"]                             = updates.interviewDate  ? { date:{ start:updates.interviewDate  } } : { date:null };
-  if (updates.offerMade      !== undefined) p["Offer Made"]                        = { checkbox: updates.offerMade };
-  if (updates.assetsCreated  !== undefined) p["Assets Created"]                    = { checkbox: updates.assetsCreated };
-  if (updates.assetsShared   !== undefined) p["Assets Shared"]                     = { checkbox: updates.assetsShared };
-  if (updates.published      !== undefined) p["Published Mini-Talk to YouTube"]    = { checkbox: updates.published };
-  if (updates.reels1         !== undefined) p["Reels & Stories #1 Published"]      = { checkbox: updates.reels1 };
-  if (updates.reels2         !== undefined) p["Reels & Stories #2 Published"]      = { checkbox: updates.reels2 };
-  if (updates.reels3         !== undefined) p["Reels & Stories #3 Published"]      = { checkbox: updates.reels3 };
+  if (updates.name         !== undefined) p["Guest Name"]                      = { title:     [{ text:{ content: updates.name } }] };
+  if (updates.source       !== undefined) p["Source"]                          = { rich_text: [{ text:{ content: updates.source } }] };
+  if (updates.notes        !== undefined) p["Notes"]                           = { rich_text: [{ text:{ content: updates.notes||"" } }] };
+  if ("invitationDate" in updates) p["Invitation Date"]                        = updates.invitationDate ? { date:{ start:updates.invitationDate } } : { date:null };
+  if ("briefingDate"   in updates) p["Briefing Date"]                          = updates.briefingDate   ? { date:{ start:updates.briefingDate   } } : { date:null };
+  if ("interviewDate"  in updates) p["Interview Date"]                         = updates.interviewDate  ? { date:{ start:updates.interviewDate  } } : { date:null };
+  if (updates.offerMade     !== undefined) p["Offer Made"]                     = { checkbox: updates.offerMade };
+  if (updates.assetsCreated !== undefined) p["Assets Created"]                 = { checkbox: updates.assetsCreated };
+  if (updates.assetsShared  !== undefined) p["Assets Shared"]                  = { checkbox: updates.assetsShared };
+  if (updates.published     !== undefined) p["Published Mini-Talk to YouTube"] = { checkbox: updates.published };
+  if (updates.reels1        !== undefined) p["Reels & Stories #1 Published"]   = { checkbox: updates.reels1 };
+  if (updates.reels2        !== undefined) p["Reels & Stories #2 Published"]   = { checkbox: updates.reels2 };
+  if (updates.reels3        !== undefined) p["Reels & Stories #3 Published"]   = { checkbox: updates.reels3 };
   return p;
 }
 
@@ -340,22 +418,42 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("/api/health", (req, res) =>
   res.json({ ok: true, mode: FIREBASE_PROJECT_ID ? "firebase" : "env" }));
 
-// Save credentials — tests connection first, then writes to Firestore
+// Save credentials + optional CSV import
 app.post("/api/setup", requireAuth, async (req, res) => {
-  const { source, notionToken, notionDbId, sheetsUrl } = req.body;
+  const { source, notionToken, notionDbId, sheetsUrl, csvContent } = req.body;
   if (!source) return res.status(400).json({ error: "source is required" });
 
   const creds = { source };
+
+  if (source === "firestore") {
+    // No external credentials needed — guests live in Firestore
+    if (FIREBASE_PROJECT_ID && req.idToken) {
+      await fsSet(`users/${req.uid}/private/credentials`, creds, req.idToken);
+    }
+    // If CSV provided, import it
+    let count = 0;
+    if (csvContent) {
+      const rows = parseCSV(csvContent);
+      const dataRows = rows.length > 1 && !parseISODate(rows[0][2]) ? rows.slice(1) : rows;
+      const guests = dataRows.filter(r => r[0]).map(csvRowToGuest);
+      for (const g of guests) {
+        await createGuestInFirestore(req.uid, req.idToken, g);
+        count++;
+      }
+    }
+    return res.json({ ok: true, count, message: csvContent ? `Imported ${count} guests` : "Ready to go!" });
+  }
+
   if (source === "notion") {
     if (!notionToken || !notionDbId) return res.status(400).json({ error: "notionToken and notionDbId are required" });
     creds.notionToken = notionToken; creds.notionDbId = notionDbId;
-  } else {
+  } else if (source === "sheets") {
     if (!sheetsUrl) return res.status(400).json({ error: "sheetsUrl is required" });
     creds.sheetsUrl = sheetsUrl;
   }
 
   try {
-    const guests = await fetchGuests(creds);
+    const guests = await fetchGuests(creds, req.uid, req.idToken);
     if (FIREBASE_PROJECT_ID && req.idToken) {
       await fsSet(`users/${req.uid}/private/credentials`, creds, req.idToken);
     }
@@ -367,8 +465,11 @@ app.post("/api/setup", requireAuth, async (req, res) => {
 
 // Dashboard data
 app.get("/api/dashboard", requireAuth, async (req, res) => {
+  if (!req.creds.source && !req.creds.notionToken && !req.creds.sheetsUrl) {
+    return res.status(400).json({ error: "No data source configured." });
+  }
   try {
-    const guests = await fetchGuests(req.creds);
+    const guests = await fetchGuests(req.creds, req.uid, req.idToken);
     res.json(buildDashboard(guests, req.creds.source));
   } catch (err) {
     console.error("Dashboard error:", err.message);
@@ -376,11 +477,16 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
   }
 });
 
-// Create guest (Notion only)
+// Create guest
 app.post("/api/guests", requireAuth, async (req, res) => {
   if (req.creds.source === "sheets")
     return res.status(400).json({ error: "Adding guests is not supported for Google Sheets." });
   try {
+    if (req.creds.source === "firestore") {
+      const guest = await createGuestInFirestore(req.uid, req.idToken, req.body);
+      return res.json(guest);
+    }
+    // Notion
     const props = buildNotionProperties(req.body);
     if (!props["Guest Name"]) return res.status(400).json({ error: "name is required" });
     const client = new Client({ auth: req.creds.notionToken });
@@ -392,11 +498,16 @@ app.post("/api/guests", requireAuth, async (req, res) => {
   }
 });
 
-// Update guest (Notion only)
+// Update guest
 app.patch("/api/guests/:id", requireAuth, async (req, res) => {
   if (req.creds.source === "sheets")
     return res.status(400).json({ error: "Editing guests is not supported for Google Sheets." });
   try {
+    if (req.creds.source === "firestore") {
+      const guest = await updateGuestInFirestore(req.uid, req.idToken, req.params.id, req.body);
+      return res.json({ ...guest, id: req.params.id });
+    }
+    // Notion
     const client = new Client({ auth: req.creds.notionToken });
     const page   = await client.pages.update({ page_id: req.params.id, properties: buildNotionProperties(req.body) });
     res.json(notionPageToGuest(page));
