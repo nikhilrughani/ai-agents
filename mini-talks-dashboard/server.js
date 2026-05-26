@@ -1,14 +1,25 @@
 require("dotenv").config();
-const express = require("express");
+const express  = require("express");
 const { Client } = require("@notionhq/client");
-const path = require("path");
+const path   = require("path");
+const crypto = require("crypto");
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
-app.use(express.json({ limit: "2mb" })); // allow CSV payloads
 
-// ─── Firebase config ──────────────────────────────────────────────────────────
-const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
+// ─── Config ───────────────────────────────────────────────────────────────────
+const FIREBASE_PROJECT_ID   = process.env.FIREBASE_PROJECT_ID   || "";
+const APP_URL               = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+const RESEND_API_KEY        = process.env.RESEND_API_KEY        || "";
+const FROM_EMAIL            = process.env.FROM_EMAIL            || "hello@nikhilrughani.com";
+const STRIPE_SECRET_KEY     = process.env.STRIPE_SECRET_KEY     || "";
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
+const STRIPE_PRICE_ID       = process.env.STRIPE_PRICE_ID       || "";
+const ENFORCE_PLAN          = process.env.ENFORCE_PLAN === "true";
+
+// Stripe webhook needs raw body — parse it before the JSON middleware
+app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
+app.use(express.json({ limit: "2mb" }));
 
 let _verifyToken = null;
 async function verifyFirebaseToken(token) {
@@ -453,11 +464,38 @@ app.post("/api/setup", requireAuth, async (req, res) => {
   }
 
   try {
-    const guests = await fetchGuests(creds, req.uid, req.idToken);
+    if (source === "firestore") {
+      // Start Fresh: just save creds. Import CSV if provided.
+      if (csvContent) {
+        const rows = parseCSV(csvContent);
+        const dataRows = rows.length > 1 && !parseISODate(rows[0][2]) ? rows.slice(1) : rows;
+        const guests = dataRows.filter(r => r[0]).map(csvRowToGuest);
+        for (const g of guests) { await createGuestInFirestore(req.uid, req.idToken, g); count++; }
+      }
+    } else if (source === "notion") {
+      // Notion one-time import: fetch from Notion, store in Firestore
+      // Credentials saved separately for future re-sync (not used for auth)
+      if (!notionToken || !notionDbId) return res.status(400).json({ error: "notionToken and notionDbId are required" });
+      const guests = await fetchGuestsFromNotion(notionToken, notionDbId);
+      for (const g of guests) { await createGuestInFirestore(req.uid, req.idToken, g); count++; }
+      // Save credentials so the user can re-sync later
+      if (FIREBASE_PROJECT_ID && req.idToken) {
+        await fsSet(`users/${req.uid}/private/notionCredentials`, { notionToken, notionDbId }, req.idToken);
+      }
+    } else if (source === "sheets") {
+      // Sheets one-time import: fetch CSV, store in Firestore, forget the sheet URL
+      if (!sheetsUrl) return res.status(400).json({ error: "sheetsUrl is required" });
+      const guests = await fetchGuestsFromSheets(sheetsUrl);
+      for (const g of guests) { await createGuestInFirestore(req.uid, req.idToken, g); count++; }
+    } else {
+      return res.status(400).json({ error: "Unknown source type." });
+    }
+
+    // Always save "firestore" as the stored source — external creds are never persisted
     if (FIREBASE_PROJECT_ID && req.idToken) {
       await fsSet(`users/${req.uid}/private/credentials`, creds, req.idToken);
     }
-    res.json({ ok: true, count: guests.length });
+    res.json({ ok: true, count });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }
@@ -515,6 +553,297 @@ app.patch("/api/guests/:id", requireAuth, async (req, res) => {
     console.error("Update error:", err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// Status: is this user configured? How many guests do they have?
+app.get("/api/status", requireAuth, async (req, res) => {
+  const configured = !!req.creds.source;
+  let count = 0;
+  if (configured) {
+    try { count = (await fsList(`users/${req.uid}/guests`, req.idToken)).length; } catch (_) {}
+  }
+  res.json({ configured, count });
+});
+
+// Delete a single guest
+app.delete("/api/guests/:id", requireAuth, async (req, res) => {
+  try {
+    await fsDelete(`users/${req.uid}/guests/${req.params.id}`, req.idToken);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Clear ALL guests (keeps credentials — use before a re-import)
+app.delete("/api/guests", requireAuth, async (req, res) => {
+  try {
+    const docs = await fsList(`users/${req.uid}/guests`, req.idToken);
+    await Promise.all(docs.map(d => fsDelete(`users/${req.uid}/guests/${d.id}`, req.idToken)));
+    res.json({ ok: true, deleted: docs.length });
+  } catch (err) {
+    console.error("Clear error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Export all guests as CSV
+app.get("/api/export", requireAuth, async (req, res) => {
+  try {
+    const guests = await fetchGuestsFromFirestore(req.uid, req.idToken);
+
+    const HEADERS = [
+      "Guest Name","Source","Invitation Date","Briefing Date","Interview Date","Notes",
+      "Offer Made","Assets Created","Assets Shared","Published",
+      "Reels 1","Reels 2","Reels 3",
+    ];
+
+    function csvCell(v) {
+      const s = v === null || v === undefined ? "" : String(v);
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+
+    const rows = [
+      HEADERS.map(csvCell).join(","),
+      ...guests.map(g => [
+        g.name, g.source || "",
+        g.invitationDate || "", g.briefingDate || "", g.interviewDate || "",
+        g.notes || "",
+        g.offerMade     ? "TRUE" : "FALSE",
+        g.assetsCreated ? "TRUE" : "FALSE",
+        g.assetsShared  ? "TRUE" : "FALSE",
+        g.published     ? "TRUE" : "FALSE",
+        g.reels1        ? "TRUE" : "FALSE",
+        g.reels2        ? "TRUE" : "FALSE",
+        g.reels3        ? "TRUE" : "FALSE",
+      ].map(csvCell).join(",")),
+    ];
+
+    const today = new Date().toISOString().split("T")[0];
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="mini-talks-guests-${today}.csv"`);
+    res.send(rows.join("\r\n"));
+  } catch (err) {
+    console.error("Export error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Plan middleware (no-op until ENFORCE_PLAN=true + Stripe configured) ────
+async function requireActivePlan(req, res, next) {
+  // Currently free for everyone — flip ENFORCE_PLAN=true when ready to charge
+  if (!ENFORCE_PLAN || !STRIPE_SECRET_KEY || !FIREBASE_PROJECT_ID) return next();
+  try {
+    const plan = await fsGet(`users/${req.uid}/private/plan`, req.idToken);
+    if (plan?.status === "active") return next();
+    return res.status(402).json({
+      error: "An active plan is required. Please upgrade to continue.",
+      upgradeUrl: `${APP_URL}/setup.html#upgrade`,
+    });
+  } catch (_) { return next(); } // fail open for now
+}
+
+// ─── Share snapshot helper ────────────────────────────────────────────────────
+async function writeShareSnapshot(uid, token, shareToken) {
+  const guests    = await fetchGuestsFromFirestore(uid, token);
+  const dashboard = buildDashboard(guests, "firestore");
+  await fsSet(`users/${uid}/publicSnapshot/data`, {
+    token:         shareToken,
+    enabled:       "true",
+    updatedAt:     new Date().toISOString(),
+    dashboardJson: JSON.stringify(dashboard),
+  }, token);
+}
+
+// ─── Email helper (Resend) ────────────────────────────────────────────────────
+async function sendWelcomeEmail(email) {
+  if (!RESEND_API_KEY) return;
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: FROM_EMAIL,
+        to:   email,
+        subject: "Welcome to Mini-Talks Pipeline 🎙️",
+        html: `
+<div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;padding:40px 20px;background:#0e0f14;color:#e8eaf0">
+  <div style="font-size:2.5rem;margin-bottom:20px">🎙️</div>
+  <h1 style="font-size:1.4rem;font-weight:700;margin-bottom:10px;color:#e8eaf0">Welcome to Mini-Talks Pipeline</h1>
+  <p style="color:#7a7f96;line-height:1.6;margin-bottom:24px">
+    Your account is all set. Track every guest from first outreach through to published — all in one clean dashboard.
+  </p>
+  <a href="${APP_URL}/setup.html" style="display:inline-block;background:#4bb8d0;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;margin-bottom:28px">
+    Set Up Your Pipeline →
+  </a>
+  <hr style="border:none;border-top:1px solid #2a2d3a;margin:24px 0">
+  <p style="font-size:.75rem;color:#7a7f96;line-height:1.5">
+    Built by <a href="https://nikhilrughani.com" style="color:#4bb8d0">Nikhil Rughani</a><br>
+    You're receiving this because you just created an account on Mini-Talks Pipeline.
+  </p>
+</div>`,
+      }),
+    });
+  } catch (err) {
+    console.warn("Welcome email failed:", err.message);
+  }
+}
+
+// ─── Serve share.html for clean URLs ─────────────────────────────────────────
+app.get("/share/:uid/:token", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "share.html")));
+
+// ─── Settings (composite read for the settings panel) ────────────────────────
+app.get("/api/settings", requireAuth, async (req, res) => {
+  const [notionCreds, shareConfig] = await Promise.all([
+    fsGet(`users/${req.uid}/private/notionCredentials`, req.idToken).catch(() => null),
+    fsGet(`users/${req.uid}/private/share`,             req.idToken).catch(() => null),
+  ]);
+  const shareEnabled = shareConfig?.enabled === "true";
+  res.json({
+    notionConnected: !!notionCreds,
+    shareEnabled,
+    shareUrl: shareEnabled ? `${APP_URL}/share/${req.uid}/${shareConfig.token}` : null,
+    pricingEnabled: !!(STRIPE_SECRET_KEY && STRIPE_PRICE_ID),
+  });
+});
+
+// ─── Notion re-sync ───────────────────────────────────────────────────────────
+app.post("/api/sync/notion", requireAuth, async (req, res) => {
+  const creds = await fsGet(`users/${req.uid}/private/notionCredentials`, req.idToken);
+  if (!creds?.notionToken || !creds?.notionDbId)
+    return res.status(400).json({ error: "No Notion credentials saved. Please re-import via Settings." });
+  try {
+    const [notionGuests, existingGuests] = await Promise.all([
+      fetchGuestsFromNotion(creds.notionToken, creds.notionDbId),
+      fetchGuestsFromFirestore(req.uid, req.idToken),
+    ]);
+    const existingNames = new Set(existingGuests.map(g => g.name.toLowerCase().trim()));
+    let added = 0, skipped = 0;
+    for (const g of notionGuests) {
+      if (existingNames.has(g.name.toLowerCase().trim())) { skipped++; continue; }
+      await createGuestInFirestore(req.uid, req.idToken, g);
+      added++;
+    }
+    res.json({ ok: true, added, skipped });
+  } catch (err) {
+    console.error("Notion sync error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Share link ───────────────────────────────────────────────────────────────
+// Enable / refresh share
+app.post("/api/share", requireAuth, async (req, res) => {
+  try {
+    const existing = await fsGet(`users/${req.uid}/private/share`, req.idToken);
+    const shareToken = existing?.token || crypto.randomBytes(24).toString("hex");
+    await fsSet(`users/${req.uid}/private/share`,
+      { token: shareToken, enabled: "true", createdAt: existing?.createdAt || new Date().toISOString() },
+      req.idToken);
+    await writeShareSnapshot(req.uid, req.idToken, shareToken);
+    res.json({ ok: true, shareUrl: `${APP_URL}/share/${req.uid}/${shareToken}` });
+  } catch (err) {
+    console.error("Share enable error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Refresh snapshot with latest data (call after editing guests)
+app.post("/api/share/refresh", requireAuth, async (req, res) => {
+  try {
+    const shareConfig = await fsGet(`users/${req.uid}/private/share`, req.idToken);
+    if (!shareConfig?.enabled) return res.json({ ok: true, skipped: true });
+    await writeShareSnapshot(req.uid, req.idToken, shareConfig.token);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Disable share
+app.delete("/api/share", requireAuth, async (req, res) => {
+  try {
+    const existing = await fsGet(`users/${req.uid}/private/share`, req.idToken);
+    if (existing) {
+      await fsSet(`users/${req.uid}/private/share`,
+        { ...existing, enabled: "false" }, req.idToken);
+    }
+    // Clear the public snapshot
+    await fsDelete(`users/${req.uid}/publicSnapshot/data`, req.idToken);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Welcome email ────────────────────────────────────────────────────────────
+app.post("/api/welcome", requireAuth, async (req, res) => {
+  const email = (req.body?.email || "").trim();
+  if (!email) return res.status(400).json({ error: "email required" });
+  await sendWelcomeEmail(email);
+  res.json({ ok: true });
+});
+
+// ─── Plan / billing ───────────────────────────────────────────────────────────
+app.get("/api/plan", requireAuth, async (req, res) => {
+  const pricingEnabled = !!(STRIPE_SECRET_KEY && STRIPE_PRICE_ID);
+  if (!FIREBASE_PROJECT_ID) return res.json({ tier: "free", status: "active", pricingEnabled });
+  let plan = await fsGet(`users/${req.uid}/private/plan`, req.idToken).catch(() => null);
+  if (!plan) {
+    plan = { tier: "free", status: "active", createdAt: new Date().toISOString() };
+    await fsSet(`users/${req.uid}/private/plan`, plan, req.idToken).catch(() => {});
+  }
+  res.json({ ...plan, pricingEnabled });
+});
+
+// Stripe: create checkout session (only works when STRIPE_SECRET_KEY is set)
+app.post("/api/stripe/checkout", requireAuth, async (req, res) => {
+  if (!STRIPE_SECRET_KEY || !STRIPE_PRICE_ID)
+    return res.status(503).json({ error: "Stripe is not configured on this server." });
+  try {
+    const Stripe  = require("stripe");
+    const stripe  = new Stripe(STRIPE_SECRET_KEY);
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      payment_method_types: ["card"],
+      line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+      customer_email: req.body.email || undefined,
+      metadata:  { uid: req.uid },
+      success_url: `${APP_URL}/?upgraded=1`,
+      cancel_url:  `${APP_URL}/setup.html`,
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stripe: webhook handler
+// TODO: Firestore write here requires a service account key (FIREBASE_SERVICE_ACCOUNT_JSON)
+//       to be added to env vars when ready to enforce paid plans.
+app.post("/api/stripe/webhook", async (req, res) => {
+  if (!STRIPE_WEBHOOK_SECRET) return res.status(503).json({ error: "Webhook not configured." });
+  const Stripe = require("stripe");
+  const stripe = new Stripe(STRIPE_SECRET_KEY);
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, req.headers["stripe-signature"], STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return res.status(400).json({ error: `Webhook signature error: ${err.message}` });
+  }
+  // Log all events for now; update Firestore plan doc when service account is available
+  console.log(`Stripe event: ${event.type}`, event.data.object?.metadata);
+  if (event.type === "checkout.session.completed") {
+    const { uid } = event.data.object.metadata || {};
+    console.log(`✅ Payment completed for uid=${uid} — update plan doc manually or add service account.`);
+  }
+  if (event.type === "customer.subscription.deleted") {
+    const { uid } = event.data.object.metadata || {};
+    console.log(`❌ Subscription cancelled for uid=${uid}`);
+  }
+  res.json({ received: true });
 });
 
 app.listen(PORT, () => console.log(`\n🎙️  Mini-Talks Dashboard → http://localhost:${PORT}\n`));

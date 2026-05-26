@@ -299,7 +299,16 @@
     const btn = document.getElementById("signup-btn");
     btn.disabled = true; btn.textContent = "Creating account…";
     try {
-      await auth.createUserWithEmailAndPassword(email, password);
+      const cred = await auth.createUserWithEmailAndPassword(email, password);
+      // Fire-and-forget welcome email (server skips silently if RESEND_API_KEY not set)
+      try {
+        const token = await cred.user.getIdToken();
+        fetch("/api/welcome", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+      } catch (_) {}
       // onAuthStateChanged will redirect → will land on setup page (no credentials yet)
     } catch (err) {
       showError("signup-error", friendlyError(err.code));

@@ -1,7 +1,7 @@
 {
   "name": "mini-talks-dashboard",
   "version": "1.0.0",
-  "description": "Real-time Mini-Talks pipeline dashboard powered by Notion",
+  "description": "Real-time Mini-Talks pipeline dashboard",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,7 +11,8 @@
     "@notionhq/client": "^2.2.15",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "jose": "^5.9.6"
+    "jose": "^5.9.6",
+    "stripe": "^16.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

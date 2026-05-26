@@ -152,8 +152,118 @@
     <a onclick="signOut()">Sign Out</a>
   </div>
 
-  <!-- Step tabs -->
-  <div class="steps">
+  <!-- ── Settings panel (shown when already configured) ── -->
+  <div id="settings-panel" style="display:none;padding:26px 30px">
+
+    <!-- Status -->
+    <div class="callout" style="border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.05);margin-bottom:20px">
+      <strong style="color:var(--green)">✓ Pipeline active</strong> &nbsp;·&nbsp;
+      <span id="conf-count-label">0 guests</span> in your pipeline.
+      Data is stored securely in Firebase.
+    </div>
+
+    <!-- Primary actions -->
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+      <button class="btn btn-primary" onclick="startImportMore()">＋ Import More Guests</button>
+      <button class="btn btn-secondary" onclick="window.location.href='/'">← Back to Dashboard</button>
+    </div>
+
+    <!-- Re-sync from Notion (shown when Notion credentials are saved) -->
+    <div id="section-notion-sync" style="display:none;border-top:1px solid var(--border);padding-top:18px;margin-bottom:20px">
+      <div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+        🗄️ Notion
+      </div>
+      <p style="font-size:.78rem;color:var(--muted);line-height:1.5;margin-bottom:12px">
+        Pull new guests from your Notion database. Existing guests (matched by name) are not duplicated.
+      </p>
+      <button class="btn btn-secondary" id="btn-notion-sync" onclick="syncFromNotion()" style="width:100%">
+        ↻ Sync New Guests from Notion
+      </button>
+      <div id="notion-sync-result" style="font-size:.78rem;margin-top:10px;display:none"></div>
+    </div>
+
+    <!-- Share link -->
+    <div style="border-top:1px solid var(--border);padding-top:18px;margin-bottom:20px">
+      <div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+        🔗 Share Pipeline
+      </div>
+      <p style="font-size:.78rem;color:var(--muted);line-height:1.5;margin-bottom:12px">
+        Generate a read-only link for team members or collaborators. No login required to view.
+      </p>
+
+      <!-- Disabled state -->
+      <div id="share-off">
+        <button class="btn btn-secondary" id="btn-share-enable" onclick="enableShare()" style="width:100%">
+          Enable Share Link
+        </button>
+      </div>
+
+      <!-- Enabled state -->
+      <div id="share-on" style="display:none">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input type="text" id="share-url-input" readonly
+            style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+                   padding:8px 11px;color:var(--text);font-size:.75rem;outline:none;cursor:text"
+          />
+          <button class="btn btn-secondary" onclick="copyShareUrl()" id="btn-copy-share"
+            style="white-space:nowrap;padding:8px 14px;font-size:.78rem">
+            Copy
+          </button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="refreshShare()" style="flex:1;font-size:.78rem">
+            ↻ Refresh Snapshot
+          </button>
+          <button class="btn btn-secondary" onclick="disableShare()"
+            style="flex:1;font-size:.78rem;border-color:rgba(248,113,113,.35);color:var(--red)">
+            Disable
+          </button>
+        </div>
+        <p style="font-size:.68rem;color:var(--muted);margin-top:8px;line-height:1.4">
+          The shared view shows a snapshot. Click "↻ Refresh Snapshot" to update it after making changes.
+        </p>
+      </div>
+    </div>
+
+    <!-- Plan / upgrade (shown when pricing is enabled on the server) -->
+    <div id="section-plan" style="display:none;border-top:1px solid var(--border);padding-top:18px;margin-bottom:20px">
+      <div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+        💳 Plan
+      </div>
+      <div id="plan-free" style="display:none">
+        <div class="callout">
+          You're on the <strong>Free plan</strong>. Upgrade to unlock unlimited guests and premium features.
+        </div>
+        <button class="btn btn-primary" onclick="startCheckout()" style="width:100%;margin-top:8px">
+          Upgrade to Pro →
+        </button>
+      </div>
+      <div id="plan-active" style="display:none">
+        <div class="callout" style="border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.05)">
+          <strong style="color:var(--green)">✓ Pro plan active</strong> — thanks for subscribing!
+        </div>
+      </div>
+    </div>
+
+    <!-- Danger zone -->
+    <div style="border-top:1px solid var(--border);padding-top:18px">
+      <div style="font-size:.7rem;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+        Danger Zone
+      </div>
+      <button class="btn" id="btn-clear" onclick="clearAllData()"
+        style="width:100%;background:none;border:1px solid rgba(248,113,113,.35);color:var(--red)">
+        🗑 Clear All Guest Data
+      </button>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:7px;line-height:1.4">
+        Permanently deletes every guest from your pipeline. Cannot be undone.<br>
+        Your account stays active — you can re-import afterwards.
+      </p>
+    </div>
+
+  </div>
+
+  <!-- Step tabs (hidden in settings mode) -->
+  <div class="steps" id="steps-row">
     <div class="step active" id="tab-1">1 · Data Source</div>
     <div class="step"        id="tab-2">2 · Configure</div>
     <div class="step"        id="tab-3">3 · Done</div>
@@ -322,9 +432,211 @@
     }
     currentUser = user;
     document.getElementById("user-email").textContent = user.email;
+
+    // Check if this account is already set up
+    try {
+      const token = await user.getIdToken();
+      const res   = await fetch("/api/status", {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const status = await res.json();
+        if (status.configured) {
+          const n = status.count;
+          document.getElementById("conf-count-label").textContent =
+            `${n} guest${n !== 1 ? "s" : ""}`;
+          document.getElementById("init-overlay").classList.add("hidden");
+          document.getElementById("main-card").style.display = "block";
+          setMode("settings");
+          loadSettings(); // async — populates notion/share/plan sections
+          return;
+        }
+      }
+    } catch (_) {}
+
     document.getElementById("init-overlay").classList.add("hidden");
     document.getElementById("main-card").style.display = "block";
   });
+
+  // ── Mode switching ─────────────────────────────────────────────────────────
+  function setMode(mode) {
+    const isSettings = mode === "settings";
+    document.getElementById("settings-panel").style.display = isSettings ? "block" : "none";
+    document.getElementById("steps-row").style.display      = isSettings ? "none"  : "flex";
+    document.getElementById("panel-1").style.display        = isSettings ? "none"  : "";
+    document.getElementById("panel-2").style.display        = "none";
+    document.getElementById("panel-3").style.display        = "none";
+    document.getElementById("card-subtitle").textContent    = isSettings
+      ? "Manage your guest data and account settings."
+      : addingMore
+        ? "Choose a source to import more guests into your pipeline."
+        : "Choose how you want to manage your guest data and your pipeline will be live in seconds.";
+    if (!isSettings) {
+      document.getElementById("panel-1").classList.add("active");
+      document.getElementById("tab-1").classList.add("active");
+      // Hide "Start Fresh" when adding to existing — it's a no-op
+      document.getElementById("src-fresh").style.display = addingMore ? "none" : "";
+      // Show cancel button when in add-more mode
+      document.getElementById("btn-step1-cancel").style.display = addingMore ? "" : "none";
+      // Default to CSV when adding more
+      if (addingMore) selectSource("csv");
+    }
+  }
+
+  // Called when "Import More Guests" is clicked from settings panel
+  function startImportMore() {
+    addingMore = true;
+    setMode("wizard");
+  }
+
+  // ── Clear all guest data ───────────────────────────────────────────────────
+  async function clearAllData() {
+    if (!confirm("This will permanently delete ALL guests from your pipeline.\n\nThis cannot be undone. Continue?")) return;
+
+    const btn = document.getElementById("btn-clear");
+    btn.disabled = true;
+    btn.textContent = "Clearing…";
+
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch("/api/guests", {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Failed to clear data");
+
+      // Stay on setup in "add" mode so they can reimport right away
+      addingMore = false;
+      document.getElementById("conf-count-label").textContent = "0 guests";
+      document.getElementById("init-overlay").classList.add("hidden"); // in case
+      setMode("wizard");
+    } catch (err) {
+      alert("Error: " + err.message);
+      btn.disabled = false;
+      btn.textContent = "🗑 Clear All Guest Data";
+    }
+  }
+
+  // ── Load settings (notion sync / share / plan) ────────────────────────────
+  async function loadSettings() {
+    try {
+      const token = await currentUser.getIdToken();
+      const res   = await fetch("/api/settings", { headers: { "Authorization": `Bearer ${token}` } });
+      if (!res.ok) return;
+      const s = await res.json();
+
+      // Notion re-sync
+      document.getElementById("section-notion-sync").style.display = s.notionConnected ? "block" : "none";
+
+      // Share link
+      if (s.shareEnabled && s.shareUrl) {
+        document.getElementById("share-on").style.display  = "block";
+        document.getElementById("share-off").style.display = "none";
+        document.getElementById("share-url-input").value   = s.shareUrl;
+      } else {
+        document.getElementById("share-on").style.display  = "none";
+        document.getElementById("share-off").style.display = "block";
+      }
+
+      // Plan / pricing
+      if (s.pricingEnabled) {
+        document.getElementById("section-plan").style.display = "block";
+        // Load plan details
+        const planRes  = await fetch("/api/plan", { headers: { "Authorization": `Bearer ${token}` } });
+        if (planRes.ok) {
+          const plan = await planRes.json();
+          document.getElementById("plan-free").style.display   = plan.tier === "free"  ? "block" : "none";
+          document.getElementById("plan-active").style.display = plan.status === "active" && plan.tier !== "free" ? "block" : "none";
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ── Notion re-sync ─────────────────────────────────────────────────────────
+  async function syncFromNotion() {
+    const btn    = document.getElementById("btn-notion-sync");
+    const result = document.getElementById("notion-sync-result");
+    btn.disabled = true; btn.textContent = "Syncing…";
+    result.style.display = "none";
+    try {
+      const token = await currentUser.getIdToken();
+      const res   = await fetch("/api/sync/notion", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Sync failed");
+      result.style.cssText = "display:block;color:var(--green);font-size:.78rem;margin-top:8px";
+      result.textContent = `✅ ${data.added} new guest${data.added !== 1 ? "s" : ""} added` +
+        (data.skipped ? `, ${data.skipped} already existed` : "");
+      // Refresh guest count
+      const countEl = document.getElementById("conf-count-label");
+      const current = parseInt(countEl.textContent) || 0;
+      countEl.textContent = `${current + data.added} guest${current + data.added !== 1 ? "s" : ""}`;
+    } catch (err) {
+      result.style.cssText = "display:block;color:var(--red);font-size:.78rem;margin-top:8px";
+      result.textContent = "❌ " + err.message;
+    }
+    btn.disabled = false; btn.textContent = "↻ Sync New Guests from Notion";
+  }
+
+  // ── Share link ─────────────────────────────────────────────────────────────
+  async function enableShare() {
+    const btn = document.getElementById("btn-share-enable");
+    btn.disabled = true; btn.textContent = "Generating…";
+    try {
+      const token = await currentUser.getIdToken();
+      const res   = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      document.getElementById("share-url-input").value   = data.shareUrl;
+      document.getElementById("share-on").style.display  = "block";
+      document.getElementById("share-off").style.display = "none";
+    } catch (err) { alert("Error: " + err.message); }
+    btn.disabled = false; btn.textContent = "Enable Share Link";
+  }
+
+  async function disableShare() {
+    if (!confirm("Disable the share link? Anyone with the URL will lose access.")) return;
+    const token = await currentUser.getIdToken();
+    await fetch("/api/share", { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
+    document.getElementById("share-on").style.display  = "none";
+    document.getElementById("share-off").style.display = "block";
+  }
+
+  async function refreshShare() {
+    const btn = document.querySelector("#share-on .btn-secondary");
+    const orig = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = "Refreshing…"; }
+    const token = await currentUser.getIdToken();
+    await fetch("/api/share/refresh", { method: "POST", headers: { "Authorization": `Bearer ${token}` } });
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+
+  async function copyShareUrl() {
+    const url = document.getElementById("share-url-input").value;
+    await navigator.clipboard.writeText(url);
+    const btn = document.getElementById("btn-copy-share");
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+  }
+
+  // ── Stripe checkout ────────────────────────────────────────────────────────
+  async function startCheckout() {
+    const token = await currentUser.getIdToken();
+    const res   = await fetch("/api/stripe/checkout", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: currentUser.email }),
+    });
+    const data = await res.json();
+    if (data.url) window.location.href = data.url;
+    else alert("Checkout error: " + (data.error || "Unknown error"));
+  }
 
   // ── Sign out ───────────────────────────────────────────────────────────────
   async function signOut() {
