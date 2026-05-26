@@ -7,58 +7,107 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
-// ─── Firebase Admin (optional — omit in local dev without Firebase) ───────────
-// Set FIREBASE_SERVICE_ACCOUNT (JSON string) in Vercel / .env to enable
-// Firebase Auth verification and per-user Firestore credential storage.
-// If not set, the server falls back to .env NOTION_TOKEN / NOTION_DATABASE_ID
-// so local development still works without a Firebase project.
-let admin, db;
-try {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (raw) {
-    admin = require("firebase-admin");
-    if (!admin.apps.length) {
-      admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
-    }
-    db = admin.firestore();
-    console.log("🔥 Firebase Admin initialised — multi-user auth enabled");
-  } else {
-    console.log("⚙️  No FIREBASE_SERVICE_ACCOUNT set — running in single-user .env mode");
+// ─── Firebase config ──────────────────────────────────────────────────────────
+// Only the project ID is needed — no service account, no secrets.
+// Firebase ID tokens are verified using Firebase's PUBLIC certificate endpoint.
+// Firestore is accessed via REST API using the user's own ID token — the
+// Firestore security rules (users can only touch their own documents) do the
+// access control, so no admin privileges are required.
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
+
+// Lazy-loaded JWKS verifier (only imported when Firebase mode is active)
+let _verifyToken = null;
+async function verifyFirebaseToken(token) {
+  if (!_verifyToken) {
+    const { createRemoteJWKSet, jwtVerify } = await import("jose");
+    const jwks = createRemoteJWKSet(
+      new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
+    );
+    _verifyToken = async (t) => {
+      const { payload } = await jwtVerify(t, jwks, {
+        issuer:   `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`,
+        audience: FIREBASE_PROJECT_ID,
+      });
+      return payload;
+    };
   }
-} catch (err) {
-  console.error("Firebase Admin init error:", err.message);
+  return _verifyToken(token);
+}
+
+// ─── Firestore REST helpers ───────────────────────────────────────────────────
+// These use the *user's own* Firebase ID token, so Firestore security rules
+// apply — each user can only read/write their own documents.
+const FS_BASE = () =>
+  `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+
+function fsToObj(doc) {
+  if (!doc?.fields) return null;
+  const obj = {};
+  for (const [k, v] of Object.entries(doc.fields)) {
+    if (v.stringValue  !== undefined) obj[k] = v.stringValue;
+    if (v.booleanValue !== undefined) obj[k] = v.booleanValue;
+  }
+  return obj;
+}
+
+function objToFs(obj) {
+  const fields = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === "string")  fields[k] = { stringValue: v };
+    if (typeof v === "boolean") fields[k] = { booleanValue: v };
+  }
+  return { fields };
+}
+
+async function fsGet(docPath, token) {
+  const res = await fetch(`${FS_BASE()}/${docPath}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Firestore read failed (${res.status})`);
+  return fsToObj(await res.json());
+}
+
+async function fsSet(docPath, data, token) {
+  const res = await fetch(`${FS_BASE()}/${docPath}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(objToFs(data)),
+  });
+  if (!res.ok) throw new Error(`Firestore write failed (${res.status})`);
 }
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
-// With Firebase Admin: verify ID token → load creds from Firestore.
-// Without Firebase Admin: load creds from .env (backward-compatible local dev).
 async function requireAuth(req, res, next) {
-  if (!admin) {
-    // Dev / single-user mode — credentials from environment variables
-    req.uid   = "local";
-    req.creds = {
-      source:      (process.env.DATA_SOURCE || "notion").toLowerCase(),
-      notionToken: process.env.NOTION_TOKEN || "",
-      notionDbId:  process.env.NOTION_DATABASE_ID || "",
-      sheetsUrl:   process.env.SHEETS_URL || "",
-    };
-    return next();
+  // ── Firebase mode (FIREBASE_PROJECT_ID set) ──
+  if (FIREBASE_PROJECT_ID) {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Authentication required. Please log in." });
+    }
+    try {
+      const token   = auth.slice(7);
+      const payload = await verifyFirebaseToken(token);
+      req.uid     = payload.sub;
+      req.idToken = token;
+      req.creds   = (await fsGet(`users/${req.uid}/private/credentials`, token)) || {};
+      return next();
+    } catch (err) {
+      console.error("Auth error:", err.message);
+      return res.status(401).json({ error: "Invalid or expired session. Please log in again." });
+    }
   }
 
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Authentication required. Please log in." });
-  }
-  try {
-    const decoded = await admin.auth().verifyIdToken(auth.slice(7));
-    req.uid = decoded.uid;
-    const snap = await db.doc(`users/${req.uid}/private/credentials`).get();
-    req.creds = snap.exists ? snap.data() : {};
-    next();
-  } catch (err) {
-    console.error("Auth error:", err.message);
-    res.status(401).json({ error: "Invalid or expired session. Please log in again." });
-  }
+  // ── Local / single-user dev mode (.env fallback) ──
+  console.log("⚙️  Dev mode — reading credentials from .env");
+  req.uid   = "local";
+  req.creds = {
+    source:      (process.env.DATA_SOURCE || "notion").toLowerCase(),
+    notionToken: process.env.NOTION_TOKEN        || "",
+    notionDbId:  process.env.NOTION_DATABASE_ID  || "",
+    sheetsUrl:   process.env.SHEETS_URL          || "",
+  };
+  next();
 }
 
 // ─── Notion property helpers ──────────────────────────────────────────────────
@@ -86,17 +135,15 @@ function getCheckbox(page, name) {
 }
 
 // ─── Notion adapter ───────────────────────────────────────────────────────────
-// Supports both the updated property names ("Guest Name", "Briefing Date", etc.)
-// and the legacy names ("Name", "Briefing", etc.) for backward compatibility.
 function notionPageToGuest(page) {
-  const bd  = getDate(page, "Briefing Date")     || getDate(page, "Briefing");
-  const id  = getDate(page, "Interview Date")    || getDate(page, "Interview");
-  const inv = getDate(page, "Invitation Date")   || getDate(page, "Invitation to briefing");
+  const bd  = getDate(page, "Briefing Date")   || getDate(page, "Briefing");
+  const id  = getDate(page, "Interview Date")  || getDate(page, "Interview");
+  const inv = getDate(page, "Invitation Date") || getDate(page, "Invitation to briefing");
   return {
     id:             page.id,
     name:           getText(page, "Guest Name") || getText(page, "Name") || "Unnamed",
     source:         getText(page, "Source") || "",
-    notes:          getText(page, "Notes") || "",
+    notes:          getText(page, "Notes")  || "",
     invitationDate: inv ? inv.toISOString().split("T")[0] : null,
     briefingDate:   bd  ? bd.toISOString().split("T")[0]  : null,
     interviewDate:  id  ? id.toISOString().split("T")[0]  : null,
@@ -117,11 +164,7 @@ async function fetchGuestsFromNotion(token, dbId) {
   const results = [];
   let cursor;
   do {
-    const r = await client.databases.query({
-      database_id: dbId,
-      start_cursor: cursor,
-      page_size: 100,
-    });
+    const r = await client.databases.query({ database_id: dbId, start_cursor: cursor, page_size: 100 });
     results.push(...r.results);
     cursor = r.has_more ? r.next_cursor : undefined;
   } while (cursor);
@@ -164,12 +207,11 @@ function parseCSV(text) {
 }
 
 function parseBool(v) {
-  if (!v) return false;
-  return ["true","yes","1","✓","TRUE","YES","True","Yes"].includes(v.trim());
+  return ["true","yes","1","✓","TRUE","YES","True","Yes"].includes((v||"").trim());
 }
 
 function parseISODate(v) {
-  if (!v || !v.trim()) return null;
+  if (!v?.trim()) return null;
   const s = v.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const d = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -182,25 +224,16 @@ function parseISODate(v) {
 async function fetchGuestsFromSheets(url) {
   const csvUrl = normalizeSheetsUrl(url);
   const res = await fetch(csvUrl);
-  if (!res.ok) throw new Error(`Google Sheets returned ${res.status}. Make sure the sheet is published to the web (File → Share → Publish to web).`);
-  const text = await res.text();
-  const rows = parseCSV(text);
+  if (!res.ok) throw new Error(`Google Sheets returned ${res.status}. Make sure the sheet is published to the web.`);
+  const rows = parseCSV(await res.text());
   if (rows.length < 2) return [];
   return rows.slice(1).filter(r => r[0]).map((cols, i) => ({
-    id:             `sheet-${i}`,
-    name:           cols[0] || "Unnamed",
-    source:         cols[1] || "",
-    invitationDate: parseISODate(cols[2]),
-    briefingDate:   parseISODate(cols[3]),
-    interviewDate:  parseISODate(cols[4]),
-    notes:          cols[5] || "",
-    offerMade:      parseBool(cols[6]),
-    assetsCreated:  parseBool(cols[7]),
-    assetsShared:   parseBool(cols[8]),
-    published:      parseBool(cols[9]),
-    reels1:         parseBool(cols[10]),
-    reels2:         parseBool(cols[11]),
-    reels3:         parseBool(cols[12]),
+    id: `sheet-${i}`, name: cols[0]||"Unnamed", source: cols[1]||"",
+    invitationDate: parseISODate(cols[2]), briefingDate: parseISODate(cols[3]),
+    interviewDate:  parseISODate(cols[4]), notes: cols[5]||"",
+    offerMade: parseBool(cols[6]), assetsCreated: parseBool(cols[7]),
+    assetsShared: parseBool(cols[8]), published: parseBool(cols[9]),
+    reels1: parseBool(cols[10]), reels2: parseBool(cols[11]), reels3: parseBool(cols[12]),
   }));
 }
 
@@ -211,24 +244,17 @@ async function fetchGuests(creds) {
 }
 
 // ─── Stage classification ─────────────────────────────────────────────────────
-const STAGES = [
-  "Outreach Sent",
-  "Briefing Booked",
-  "Briefing Done",
-  "Interview Booked",
-  "Interview Done",
-  "Published",
-];
+const STAGES = ["Outreach Sent","Briefing Booked","Briefing Done","Interview Booked","Interview Done","Published"];
 
 function classifyGuest(g) {
   const now = new Date();
   const bd  = g.briefingDate  ? new Date(g.briefingDate  + "T12:00:00") : null;
   const id  = g.interviewDate ? new Date(g.interviewDate + "T12:00:00") : null;
-  if (g.published)        return "Published";
-  if (id  && id  < now)   return "Interview Done";
-  if (id  && id  >= now)  return "Interview Booked";
-  if (bd  && bd  < now)   return "Briefing Done";
-  if (bd  && bd  >= now)  return "Briefing Booked";
+  if (g.published)       return "Published";
+  if (id && id < now)    return "Interview Done";
+  if (id && id >= now)   return "Interview Booked";
+  if (bd && bd < now)    return "Briefing Done";
+  if (bd && bd >= now)   return "Briefing Booked";
   return "Outreach Sent";
 }
 
@@ -241,11 +267,8 @@ function daysSince(dateStr) {
 function buildDashboard(rawGuests, source) {
   const now = new Date();
   const dow = now.getDay();
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - (dow + 6) % 7);
-  weekStart.setHours(0,0,0,0);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - (dow + 6) % 7); weekStart.setHours(0,0,0,0);
+  const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 7);
 
   const guests  = rawGuests.map(g => ({ ...g, stage: classifyGuest(g) }));
   const counts  = Object.fromEntries(STAGES.map(s => [s, 0]));
@@ -254,40 +277,27 @@ function buildDashboard(rawGuests, source) {
   let weeklyInterviews = 0, weeklyBriefings = 0, totalActive = 0;
 
   for (const g of guests) {
-    counts[g.stage]++;
-    byStage[g.stage].push(g);
+    counts[g.stage]++; byStage[g.stage].push(g);
     if (g.stage !== "Published") totalActive++;
-
-    const bd  = g.briefingDate  ? new Date(g.briefingDate  + "T12:00:00") : null;
-    const id  = g.interviewDate ? new Date(g.interviewDate + "T12:00:00") : null;
-    const inv = g.invitationDate ? new Date(g.invitationDate + "T12:00:00") : null;
-
+    const bd  = g.briefingDate   ? new Date(g.briefingDate  + "T12:00:00") : null;
+    const id  = g.interviewDate  ? new Date(g.interviewDate + "T12:00:00") : null;
+    const inv = g.invitationDate ? new Date(g.invitationDate+ "T12:00:00") : null;
     if (id  && id  >= weekStart && id  < weekEnd && id  < now) weeklyInterviews++;
     if (bd  && bd  >= weekStart && bd  < weekEnd && bd  < now) weeklyBriefings++;
-
     if (g.stage === "Briefing Done" && bd) {
       const age = daysSince(g.briefingDate);
-      if (age >= 7) overdue.push({
-        name: g.name, stage: g.stage, id: g.id, daysOverdue: age - 7,
-        reason: `Briefing done ${age}d ago — no interview scheduled`,
-      });
+      if (age >= 7)  overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue:age-7,  reason:`Briefing done ${age}d ago — no interview scheduled` });
     }
     if (g.stage === "Interview Done" && id) {
       const age = daysSince(g.interviewDate);
-      if (age >= 14) overdue.push({
-        name: g.name, stage: g.stage, id: g.id, daysOverdue: age - 14,
-        reason: `Interview done ${age}d ago — not yet published`,
-      });
+      if (age >= 14) overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue:age-14, reason:`Interview done ${age}d ago — not yet published` });
     }
     if (g.stage === "Outreach Sent" && inv) {
       const age = daysSince(g.invitationDate);
-      if (age >= 14) overdue.push({
-        name: g.name, stage: g.stage, id: g.id, daysOverdue: age - 14,
-        reason: `Outreach sent ${age}d ago — no briefing booked`,
-      });
+      if (age >= 14) overdue.push({ name:g.name, stage:g.stage, id:g.id, daysOverdue:age-14, reason:`Outreach sent ${age}d ago — no briefing booked` });
     }
   }
-  overdue.sort((a, b) => b.daysOverdue - a.daysOverdue);
+  overdue.sort((a,b) => b.daysOverdue - a.daysOverdue);
 
   const total  = guests.length;
   const conv   = total > 0 ? Math.round((counts["Published"] / total) * 100) : 0;
@@ -295,12 +305,8 @@ function buildDashboard(rawGuests, source) {
   const health = Math.min(100, Math.max(0, Math.round(conv * 0.4 + oScore * 0.6)));
 
   return {
-    lastUpdated: new Date().toISOString(),
-    totalGuests: total,
-    totalActive,
-    weeklyInterviews,
-    weeklyBriefings,
-    healthScore: health,
+    lastUpdated: new Date().toISOString(), totalGuests: total, totalActive,
+    weeklyInterviews, weeklyBriefings, healthScore: health,
     readOnly: source === "sheets",
     stages: STAGES.map(name => ({ name, count: counts[name], guests: byStage[name] })),
     overdue,
@@ -310,12 +316,12 @@ function buildDashboard(rawGuests, source) {
 // ─── Notion write helpers ─────────────────────────────────────────────────────
 function buildNotionProperties(updates) {
   const p = {};
-  if (updates.name          !== undefined) p["Guest Name"]                         = { title:     [{ text: { content: updates.name } }] };
-  if (updates.source        !== undefined) p["Source"]                             = { rich_text: [{ text: { content: updates.source } }] };
-  if (updates.notes         !== undefined) p["Notes"]                              = { rich_text: [{ text: { content: updates.notes || "" } }] };
-  if ("invitationDate" in updates) p["Invitation Date"]                            = updates.invitationDate ? { date: { start: updates.invitationDate } } : { date: null };
-  if ("briefingDate"   in updates) p["Briefing Date"]                              = updates.briefingDate   ? { date: { start: updates.briefingDate   } } : { date: null };
-  if ("interviewDate"  in updates) p["Interview Date"]                             = updates.interviewDate  ? { date: { start: updates.interviewDate  } } : { date: null };
+  if (updates.name          !== undefined) p["Guest Name"]                         = { title:     [{ text:{ content: updates.name } }] };
+  if (updates.source        !== undefined) p["Source"]                             = { rich_text: [{ text:{ content: updates.source } }] };
+  if (updates.notes         !== undefined) p["Notes"]                              = { rich_text: [{ text:{ content: updates.notes||"" } }] };
+  if ("invitationDate" in updates) p["Invitation Date"]                            = updates.invitationDate ? { date:{ start:updates.invitationDate } } : { date:null };
+  if ("briefingDate"   in updates) p["Briefing Date"]                              = updates.briefingDate   ? { date:{ start:updates.briefingDate   } } : { date:null };
+  if ("interviewDate"  in updates) p["Interview Date"]                             = updates.interviewDate  ? { date:{ start:updates.interviewDate  } } : { date:null };
   if (updates.offerMade      !== undefined) p["Offer Made"]                        = { checkbox: updates.offerMade };
   if (updates.assetsCreated  !== undefined) p["Assets Created"]                    = { checkbox: updates.assetsCreated };
   if (updates.assetsShared   !== undefined) p["Assets Shared"]                     = { checkbox: updates.assetsShared };
@@ -331,21 +337,18 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-// Health check — no auth required
-app.get("/api/health", (req, res) => res.json({ ok: true, mode: admin ? "firebase" : "env", ts: Date.now() }));
+app.get("/api/health", (req, res) =>
+  res.json({ ok: true, mode: FIREBASE_PROJECT_ID ? "firebase" : "env" }));
 
-// Save credentials — tests connection then saves to Firestore (Firebase mode)
-// or just tests in env mode (credentials are in .env already)
+// Save credentials — tests connection first, then writes to Firestore
 app.post("/api/setup", requireAuth, async (req, res) => {
   const { source, notionToken, notionDbId, sheetsUrl } = req.body;
   if (!source) return res.status(400).json({ error: "source is required" });
 
   const creds = { source };
   if (source === "notion") {
-    if (!notionToken || !notionDbId)
-      return res.status(400).json({ error: "notionToken and notionDbId are required" });
-    creds.notionToken = notionToken;
-    creds.notionDbId  = notionDbId;
+    if (!notionToken || !notionDbId) return res.status(400).json({ error: "notionToken and notionDbId are required" });
+    creds.notionToken = notionToken; creds.notionDbId = notionDbId;
   } else {
     if (!sheetsUrl) return res.status(400).json({ error: "sheetsUrl is required" });
     creds.sheetsUrl = sheetsUrl;
@@ -353,12 +356,9 @@ app.post("/api/setup", requireAuth, async (req, res) => {
 
   try {
     const guests = await fetchGuests(creds);
-
-    // In Firebase mode: save to Firestore
-    if (db) {
-      await db.doc(`users/${req.uid}/private/credentials`).set(creds);
+    if (FIREBASE_PROJECT_ID && req.idToken) {
+      await fsSet(`users/${req.uid}/private/credentials`, creds, req.idToken);
     }
-
     res.json({ ok: true, count: guests.length });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
@@ -379,15 +379,12 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
 // Create guest (Notion only)
 app.post("/api/guests", requireAuth, async (req, res) => {
   if (req.creds.source === "sheets")
-    return res.status(400).json({ error: "Adding guests is not supported for Google Sheets. Please add them directly in your sheet." });
+    return res.status(400).json({ error: "Adding guests is not supported for Google Sheets." });
   try {
     const props = buildNotionProperties(req.body);
     if (!props["Guest Name"]) return res.status(400).json({ error: "name is required" });
     const client = new Client({ auth: req.creds.notionToken });
-    const page   = await client.pages.create({
-      parent: { database_id: req.creds.notionDbId },
-      properties: props,
-    });
+    const page   = await client.pages.create({ parent:{ database_id: req.creds.notionDbId }, properties: props });
     res.json(notionPageToGuest(page));
   } catch (err) {
     console.error("Create error:", err.message);
@@ -398,13 +395,10 @@ app.post("/api/guests", requireAuth, async (req, res) => {
 // Update guest (Notion only)
 app.patch("/api/guests/:id", requireAuth, async (req, res) => {
   if (req.creds.source === "sheets")
-    return res.status(400).json({ error: "Editing guests is not supported for Google Sheets. Please edit them directly in your sheet." });
+    return res.status(400).json({ error: "Editing guests is not supported for Google Sheets." });
   try {
     const client = new Client({ auth: req.creds.notionToken });
-    const page   = await client.pages.update({
-      page_id: req.params.id,
-      properties: buildNotionProperties(req.body),
-    });
+    const page   = await client.pages.update({ page_id: req.params.id, properties: buildNotionProperties(req.body) });
     res.json(notionPageToGuest(page));
   } catch (err) {
     console.error("Update error:", err.message);
