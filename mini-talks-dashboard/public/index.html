@@ -67,6 +67,14 @@
       padding: 7px 10px; font-size: 1rem; cursor: pointer; transition: border-color .15s; line-height:1;
     }
     .btn-settings:hover { border-color: var(--accent); }
+    .btn-export {
+      display: flex; align-items: center; gap: 5px;
+      background: none; border: 1px solid var(--border); border-radius: 8px;
+      padding: 7px 12px; font-size: 0.78rem; font-weight: 600; color: var(--muted);
+      cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .btn-export:hover { border-color: var(--green); color: var(--green); }
+    .btn-export:disabled { opacity: .5; cursor: not-allowed; }
     .btn-signout {
       background: none; border: 1px solid var(--border); border-radius: 8px;
       padding: 7px 12px; font-size: 0.75rem; color: var(--muted); cursor: pointer;
@@ -420,6 +428,7 @@
     </div>
     <div class="header-right">
       <button class="btn-add" id="btn-add" onclick="openAddModal()" style="display:none">＋ Add Guest</button>
+      <button class="btn-export" id="btn-export" onclick="exportCSV()" title="Download all guests as CSV">↓ Export CSV</button>
       <button class="btn-settings" onclick="window.location='/setup.html'" title="Settings">⚙️</button>
       <div class="refresh-badge">
         <div class="pulse"></div>
@@ -950,6 +959,37 @@ function startCountdown() {
     document.getElementById("countdown-bar").style.width = (countdownSecs / REFRESH_INTERVAL * 100) + "%";
     if (countdownSecs <= 0) { fetchDashboard(); countdownSecs = REFRESH_INTERVAL; }
   }, 1000);
+}
+
+// ── Export CSV ─────────────────────────────────────────────────────────────
+async function exportCSV() {
+  const btn = document.getElementById("btn-export");
+  btn.disabled = true;
+  btn.textContent = "Exporting…";
+  try {
+    const token = await currentUser.getIdToken();
+    const res = await fetch("/api/export", {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const today = new Date().toISOString().split("T")[0];
+    a.href     = url;
+    a.download = `mini-talks-guests-${today}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("✓ CSV downloaded");
+  } catch (err) {
+    showToast("Export failed: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↓ Export CSV";
+  }
 }
 
 // Keyboard: Escape closes modal

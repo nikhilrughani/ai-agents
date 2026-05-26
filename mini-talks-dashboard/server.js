@@ -385,7 +385,7 @@ function buildDashboard(rawGuests, source) {
   return {
     lastUpdated: new Date().toISOString(), totalGuests: total, totalActive,
     weeklyInterviews, weeklyBriefings, healthScore: health,
-    readOnly: source === "sheets",
+    readOnly: false, // All data lives in Firestore — always editable
     stages: STAGES.map(name => ({ name, count: counts[name], guests: byStage[name] })),
     overdue,
   };
@@ -418,47 +418,46 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("/api/health", (req, res) =>
   res.json({ ok: true, mode: FIREBASE_PROJECT_ID ? "firebase" : "env" }));
 
-// Save credentials + optional CSV import
+// Setup: one-time import into Firestore, then source becomes "firestore" for everyone
 app.post("/api/setup", requireAuth, async (req, res) => {
   const { source, notionToken, notionDbId, sheetsUrl, csvContent } = req.body;
   if (!source) return res.status(400).json({ error: "source is required" });
 
-  const creds = { source };
-
-  if (source === "firestore") {
-    // No external credentials needed — guests live in Firestore
-    if (FIREBASE_PROJECT_ID && req.idToken) {
-      await fsSet(`users/${req.uid}/private/credentials`, creds, req.idToken);
-    }
-    // If CSV provided, import it
-    let count = 0;
-    if (csvContent) {
-      const rows = parseCSV(csvContent);
-      const dataRows = rows.length > 1 && !parseISODate(rows[0][2]) ? rows.slice(1) : rows;
-      const guests = dataRows.filter(r => r[0]).map(csvRowToGuest);
-      for (const g of guests) {
-        await createGuestInFirestore(req.uid, req.idToken, g);
-        count++;
-      }
-    }
-    return res.json({ ok: true, count, message: csvContent ? `Imported ${count} guests` : "Ready to go!" });
-  }
-
-  if (source === "notion") {
-    if (!notionToken || !notionDbId) return res.status(400).json({ error: "notionToken and notionDbId are required" });
-    creds.notionToken = notionToken; creds.notionDbId = notionDbId;
-  } else if (source === "sheets") {
-    if (!sheetsUrl) return res.status(400).json({ error: "sheetsUrl is required" });
-    creds.sheetsUrl = sheetsUrl;
-  }
+  // The final stored credential is always firestore — external sources are import-only
+  const firestoreCreds = { source: "firestore" };
+  let count = 0;
 
   try {
-    const guests = await fetchGuests(creds, req.uid, req.idToken);
-    if (FIREBASE_PROJECT_ID && req.idToken) {
-      await fsSet(`users/${req.uid}/private/credentials`, creds, req.idToken);
+    if (source === "firestore") {
+      // Start Fresh: just save creds. Import CSV if provided.
+      if (csvContent) {
+        const rows = parseCSV(csvContent);
+        const dataRows = rows.length > 1 && !parseISODate(rows[0][2]) ? rows.slice(1) : rows;
+        const guests = dataRows.filter(r => r[0]).map(csvRowToGuest);
+        for (const g of guests) { await createGuestInFirestore(req.uid, req.idToken, g); count++; }
+      }
+    } else if (source === "notion") {
+      // Notion one-time import: fetch from Notion, store in Firestore, forget credentials
+      if (!notionToken || !notionDbId) return res.status(400).json({ error: "notionToken and notionDbId are required" });
+      const guests = await fetchGuestsFromNotion(notionToken, notionDbId);
+      for (const g of guests) { await createGuestInFirestore(req.uid, req.idToken, g); count++; }
+    } else if (source === "sheets") {
+      // Sheets one-time import: fetch CSV, store in Firestore, forget the sheet URL
+      if (!sheetsUrl) return res.status(400).json({ error: "sheetsUrl is required" });
+      const guests = await fetchGuestsFromSheets(sheetsUrl);
+      for (const g of guests) { await createGuestInFirestore(req.uid, req.idToken, g); count++; }
+    } else {
+      return res.status(400).json({ error: "Unknown source type." });
     }
-    res.json({ ok: true, count: guests.length });
+
+    // Always save "firestore" as the stored source — external creds are never persisted
+    if (FIREBASE_PROJECT_ID && req.idToken) {
+      await fsSet(`users/${req.uid}/private/credentials`, firestoreCreds, req.idToken);
+    }
+
+    res.json({ ok: true, count });
   } catch (err) {
+    console.error("Setup error:", err.message);
     res.status(400).json({ ok: false, error: err.message });
   }
 });
@@ -514,6 +513,48 @@ app.patch("/api/guests/:id", requireAuth, async (req, res) => {
     res.json(notionPageToGuest(page));
   } catch (err) {
     console.error("Update error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Export all guests as CSV
+app.get("/api/export", requireAuth, async (req, res) => {
+  try {
+    const guests = await fetchGuestsFromFirestore(req.uid, req.idToken);
+
+    const HEADERS = [
+      "Guest Name","Source","Invitation Date","Briefing Date","Interview Date","Notes",
+      "Offer Made","Assets Created","Assets Shared","Published",
+      "Reels 1","Reels 2","Reels 3",
+    ];
+
+    function csvCell(v) {
+      const s = v === null || v === undefined ? "" : String(v);
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+
+    const rows = [
+      HEADERS.map(csvCell).join(","),
+      ...guests.map(g => [
+        g.name, g.source || "",
+        g.invitationDate || "", g.briefingDate || "", g.interviewDate || "",
+        g.notes || "",
+        g.offerMade     ? "TRUE" : "FALSE",
+        g.assetsCreated ? "TRUE" : "FALSE",
+        g.assetsShared  ? "TRUE" : "FALSE",
+        g.published     ? "TRUE" : "FALSE",
+        g.reels1        ? "TRUE" : "FALSE",
+        g.reels2        ? "TRUE" : "FALSE",
+        g.reels3        ? "TRUE" : "FALSE",
+      ].map(csvCell).join(",")),
+    ];
+
+    const today = new Date().toISOString().split("T")[0];
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="mini-talks-guests-${today}.csv"`);
+    res.send(rows.join("\r\n"));
+  } catch (err) {
+    console.error("Export error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

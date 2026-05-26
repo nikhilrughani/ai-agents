@@ -180,13 +180,13 @@
       <div class="source-card" id="src-notion" onclick="selectSource('notion')">
         <div class="source-icon">🗄️</div>
         <div class="source-name">Notion</div>
-        <div class="source-desc">Connect an existing<br>Notion database.</div>
+        <div class="source-desc">Import once from Notion.<br>No ongoing connection.</div>
       </div>
 
       <div class="source-card" id="src-sheets" onclick="selectSource('sheets')">
         <div class="source-icon">📊</div>
         <div class="source-name">Google Sheets</div>
-        <div class="source-desc">Read-only view.<br>Edit in your sheet.</div>
+        <div class="source-desc">Import once from Sheets.<br>No ongoing connection.</div>
       </div>
 
     </div>
@@ -230,8 +230,9 @@
     <!-- Notion fields -->
     <div id="notion-fields" style="display:none">
       <div class="callout">
-        <strong>Before you start:</strong> make sure your Notion integration is connected to your database.
-        In Notion open your database → <strong>···</strong> menu → <strong>Connections</strong> → select your integration.
+        <strong>One-time import:</strong> We'll pull all your guests from Notion right now and store them in your dashboard.
+        After that your Notion database is not needed — you'll manage everything here and can export as CSV anytime.<br><br>
+        Make sure your Notion integration is connected: open your database → <strong>···</strong> → <strong>Connections</strong> → select your integration.
       </div>
       <div class="field">
         <label>Notion Integration Token</label>
@@ -254,21 +255,22 @@
     <!-- Google Sheets fields -->
     <div id="sheets-fields" style="display:none">
       <div class="callout">
-        <strong>Template:</strong> Your sheet must have these column headers in row 1 (in order):<br><br>
+        <strong>One-time import:</strong> We'll pull all your guests from your Google Sheet right now and store them in your dashboard.
+        After that your Google Sheet is not needed — you'll manage everything here and can export as CSV anytime.<br><br>
+        Your sheet must have these column headers in row 1 (in order):<br><br>
         <code style="font-size:.7rem;line-height:1.8">
           Guest Name · Source · Invitation Date · Briefing Date · Interview Date · Notes ·
           Offer Made · Assets Created · Assets Shared · Published to YouTube ·
           Reels 1 Published · Reels 2 Published · Reels 3 Published
         </code><br><br>
-        Use <strong>TRUE / FALSE</strong> for checkboxes and <strong>YYYY-MM-DD</strong> for dates.
-        Then publish: <strong>File → Share → Publish to web → CSV</strong>.
+        Use <strong>TRUE / FALSE</strong> for checkboxes, <strong>YYYY-MM-DD</strong> for dates.
+        Publish first: <strong>File → Share → Publish to web → CSV</strong>.
       </div>
       <div class="field">
         <label>Google Sheets URL</label>
         <input type="text" id="sheets-url" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off" />
         <div class="hint">
           Paste the regular sheet URL, the published CSV link, or just the spreadsheet ID.
-          The sheet must be either published to the web, or publicly readable.
         </div>
       </div>
     </div>
@@ -357,13 +359,10 @@
       // Reset save button
       const btn = document.getElementById("btn-save");
       const result = document.getElementById("test-result");
-      if (selectedSource === "fresh") {
-        btn.textContent = "Save & Continue";
-      } else if (selectedSource === "csv") {
-        btn.textContent = "Import & Save";
-      } else {
-        btn.textContent = "Test & Save Connection";
-      }
+      btn.textContent = selectedSource === "fresh"  ? "Save & Continue"       :
+                       selectedSource === "csv"    ? "Import & Save"          :
+                       selectedSource === "notion" ? "Import from Notion →"   :
+                                                     "Import from Sheets →";
       btn.disabled = false;
       result.style.display = "none";
       result.className = "test-result";
@@ -444,8 +443,10 @@
     const resultEl = document.getElementById("test-result");
 
     btn.disabled = true;
-    btn.textContent = selectedSource === "csv" ? "Importing…" :
-                      (selectedSource === "fresh" ? "Saving…" : "Testing…");
+    btn.textContent = selectedSource === "csv"    ? "Importing…" :
+                      selectedSource === "fresh"  ? "Saving…"    :
+                      selectedSource === "notion" ? "Importing from Notion…" :
+                                                    "Importing from Sheets…";
     resultEl.style.display = "none";
     resultEl.className = "test-result";
 
@@ -480,15 +481,20 @@
       if (!data.ok) throw new Error(data.error || "Setup failed");
 
       // Success message
+      const n = data.count;
+      const gStr = `${n} guest${n !== 1 ? "s" : ""}`;
       let msg = "✅ Saved!";
-      if (selectedSource === "csv") {
-        msg = `✅ Imported ${data.count} guest${data.count !== 1 ? "s" : ""}. Credentials saved to your account.`;
-        setDoneText("Import complete! 🎉", `${data.count} guest${data.count !== 1 ? "s" : ""} loaded into your pipeline.`);
-      } else if (selectedSource === "notion" || selectedSource === "sheets") {
-        msg = `✅ Connected! Found ${data.count} guest${data.count !== 1 ? "s" : ""} in your database. Credentials saved to your account.`;
-        setDoneText("Connected!", `${data.count} guest${data.count !== 1 ? "s" : ""} synced from your ${selectedSource === "notion" ? "Notion database" : "Google Sheet"}.`);
-      } else {
+      if (selectedSource === "fresh") {
         setDoneText("You're all set! 🚀", "Your dashboard is ready. Add your first guest from the pipeline view.");
+      } else if (selectedSource === "csv") {
+        msg = `✅ Imported ${gStr} from your CSV.`;
+        setDoneText("Import complete! 🎉", `${gStr} loaded into your pipeline.`);
+      } else if (selectedSource === "notion") {
+        msg = `✅ Imported ${gStr} from Notion. Your Notion database is no longer needed.`;
+        setDoneText("Import complete! 🎉", `${gStr} imported from Notion — everything's now in your dashboard.`);
+      } else if (selectedSource === "sheets") {
+        msg = `✅ Imported ${gStr} from Google Sheets. Your sheet is no longer needed.`;
+        setDoneText("Import complete! 🎉", `${gStr} imported from Google Sheets — everything's now in your dashboard.`);
       }
 
       resultEl.className = "test-result ok";
@@ -503,8 +509,10 @@
       resultEl.textContent = "❌ " + err.message;
       resultEl.style.display = "block";
       btn.disabled = false;
-      btn.textContent = selectedSource === "csv" ? "Import & Save" :
-                        (selectedSource === "fresh" ? "Save & Continue" : "Test & Save Connection");
+      btn.textContent = selectedSource === "csv"    ? "Import & Save" :
+                       selectedSource === "fresh"  ? "Save & Continue" :
+                       selectedSource === "notion" ? "Import from Notion →" :
+                                                     "Import from Sheets →";
     }
   }
 
