@@ -286,6 +286,13 @@
       background:none; color:var(--muted); cursor:pointer; font-size:.85rem;
     }
     .btn-cancel:hover { color:var(--text); }
+    .btn-delete {
+      padding:8px 16px; border-radius:8px; font-size:.82rem; cursor:pointer;
+      background:none; border:1px solid rgba(248,113,113,.35); color:var(--red);
+      transition:all .15s; margin-right:auto;
+    }
+    .btn-delete:hover { background:rgba(248,113,113,.1); border-color:var(--red); }
+    .btn-delete:disabled { opacity:.5; cursor:not-allowed; }
     .btn-save {
       padding:8px 20px; border-radius:8px; border:none;
       background:var(--accent); color:#fff; cursor:pointer; font-size:.85rem; font-weight:600;
@@ -443,6 +450,7 @@
 
     </div>
     <div class="modal-footer">
+      <button class="btn-delete" id="btn-delete" onclick="deleteGuest()" style="display:none">🗑 Delete</button>
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" id="btn-save" onclick="saveGuest()">Save Guest</button>
     </div>
@@ -811,6 +819,7 @@ function openAddModal() {
   editingGuest = null;
   document.getElementById("modal-title").textContent = "Add Guest";
   document.getElementById("btn-save").textContent = "Add Guest";
+  document.getElementById("btn-delete").style.display = "none";
   document.getElementById("quick-actions-row").style.display = "none";
   clearModalForm();
   applyModalLocks(null);
@@ -826,6 +835,7 @@ function openEditModal(guestId) {
 
   document.getElementById("modal-title").textContent = "Edit — " + guest.name;
   document.getElementById("btn-save").textContent = "Save Changes";
+  document.getElementById("btn-delete").style.display = "";
   document.getElementById("modal-error").style.display = "none";
   applyModalLocks(guest.stage);
 
@@ -1004,6 +1014,25 @@ function startCountdown() {
     document.getElementById("countdown-bar").style.width = (countdownSecs / REFRESH_INTERVAL * 100) + "%";
     if (countdownSecs <= 0) { fetchDashboard(); countdownSecs = REFRESH_INTERVAL; }
   }, 1000);
+}
+
+// ── Delete guest ───────────────────────────────────────────────────────────
+async function deleteGuest() {
+  if (!editingGuest) return;
+  if (!confirm(`Delete "${editingGuest.name}"? This cannot be undone.`)) return;
+  const btn = document.getElementById("btn-delete");
+  btn.disabled = true; btn.textContent = "Deleting…";
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/guests/${editingGuest.id}`, { method: "DELETE", headers });
+    if (!res.ok) throw new Error((await res.json()).error || "Delete failed");
+    closeModal();
+    showToast(`🗑 ${editingGuest.name} deleted`);
+    await fetchDashboard();
+  } catch (err) {
+    showToast("Error: " + err.message, "error");
+    btn.disabled = false; btn.textContent = "🗑 Delete";
+  }
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────
