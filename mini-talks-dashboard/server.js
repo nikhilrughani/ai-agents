@@ -470,6 +470,7 @@ app.post("/api/setup", requireAuth, async (req, res) => {
     creds.sheetsUrl = sheetsUrl;
   }
 
+  let count = 0;
   try {
     if (source === "firestore") {
       // Start Fresh: just save creds. Import CSV if provided.
