@@ -657,7 +657,9 @@
   // ── Step navigation ────────────────────────────────────────────────────────
   function goStep(n) {
     [1,2,3].forEach(i => {
-      document.getElementById(`panel-${i}`).classList.toggle("active", i === n);
+      const panel = document.getElementById(`panel-${i}`);
+      panel.classList.toggle("active", i === n);
+      panel.style.display = ""; // clear any inline override from setMode
       const tab = document.getElementById(`tab-${i}`);
       tab.classList.toggle("active", i === n);
       tab.classList.toggle("done", i < n);
