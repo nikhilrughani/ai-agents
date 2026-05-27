@@ -135,6 +135,16 @@ async function fsUpdate(docPath, data, token) {
   return docToObj(await res.json());
 }
 
+// DELETE a document (404-tolerant)
+async function fsDelete(docPath, token) {
+  const res = await fetch(`${FS()}/${docPath}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) return; // already gone
+  if (!res.ok) throw new Error(`Firestore DELETE failed (${res.status})`);
+}
+
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 async function requireAuth(req, res, next) {
   if (FIREBASE_PROJECT_ID) {
