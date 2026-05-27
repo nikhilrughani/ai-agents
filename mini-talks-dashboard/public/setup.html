@@ -424,6 +424,7 @@
   let currentUser = null;
   let selectedSource = "fresh"; // fresh | csv | notion | sheets
   let csvContent = null;        // raw text of the uploaded CSV
+  let addingMore = false;       // true when importing into an existing pipeline
 
   // ── Auth gate ──────────────────────────────────────────────────────────────
   auth.onAuthStateChanged(async user => {

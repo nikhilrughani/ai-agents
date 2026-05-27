@@ -482,15 +482,7 @@ app.post("/api/setup", requireAuth, async (req, res) => {
 
   let count = 0;
   try {
-    if (source === "firestore") {
-      // Start Fresh: just save creds. Import CSV if provided.
-      if (csvContent) {
-        const rows = parseCSV(csvContent);
-        const dataRows = rows.length > 1 && !parseISODate(rows[0][2]) ? rows.slice(1) : rows;
-        const guests = dataRows.filter(r => r[0]).map(csvRowToGuest);
-        for (const g of guests) { await createGuestInFirestore(req.uid, req.idToken, g); count++; }
-      }
-    } else if (source === "notion") {
+    if (source === "notion") {
       // Notion one-time import: fetch from Notion, store in Firestore
       // Credentials saved separately for future re-sync (not used for auth)
       if (!notionToken || !notionDbId) return res.status(400).json({ error: "notionToken and notionDbId are required" });
