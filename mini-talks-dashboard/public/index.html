@@ -1023,11 +1023,13 @@ async function deleteGuest() {
   const btn = document.getElementById("btn-delete");
   btn.disabled = true; btn.textContent = "Deleting…";
   try {
+    const guestName = editingGuest.name;
+    const guestId   = editingGuest.id;
     const headers = await getAuthHeaders();
-    const res = await fetch(`/api/guests/${editingGuest.id}`, { method: "DELETE", headers });
+    const res = await fetch(`/api/guests/${guestId}`, { method: "DELETE", headers });
     if (!res.ok) throw new Error((await res.json()).error || "Delete failed");
     closeModal();
-    showToast(`🗑 ${editingGuest.name} deleted`);
+    showToast(`🗑 ${guestName} deleted`);
     await fetchDashboard();
   } catch (err) {
     showToast("Error: " + err.message, "error");
