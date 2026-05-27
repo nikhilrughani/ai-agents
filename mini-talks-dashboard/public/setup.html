@@ -143,7 +143,7 @@
         <div class="logo-sub">by <a href="https://nikhilrughani.com" target="_blank" style="color:#4bb8d0;text-decoration:none;font-weight:600">Nikhil Rughani</a></div>
       </div>
     </div>
-    <p>Choose how you want to manage your guest data and your pipeline will be live in seconds.</p>
+    <p id="card-subtitle">Choose how you want to manage your guest data and your pipeline will be live in seconds.</p>
   </div>
 
   <!-- Logged-in user strip -->
@@ -301,6 +301,7 @@
 
     </div>
     <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-step1-cancel" onclick="setMode('settings')" style="display:none">Cancel</button>
       <button class="btn btn-primary" id="btn-step1-next" onclick="step1Next()">Next →</button>
     </div>
   </div>
