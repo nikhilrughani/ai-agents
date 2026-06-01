@@ -819,6 +819,7 @@ function openAddModal() {
   editingGuest = null;
   document.getElementById("modal-title").textContent = "Add Guest";
   document.getElementById("btn-save").textContent = "Add Guest";
+  document.getElementById("btn-save").disabled = false;
   document.getElementById("btn-delete").style.display = "none";
   document.getElementById("quick-actions-row").style.display = "none";
   clearModalForm();
@@ -835,6 +836,7 @@ function openEditModal(guestId) {
 
   document.getElementById("modal-title").textContent = "Edit — " + guest.name;
   document.getElementById("btn-save").textContent = "Save Changes";
+  document.getElementById("btn-save").disabled = false;
   document.getElementById("btn-delete").style.display = "";
   document.getElementById("modal-error").style.display = "none";
   applyModalLocks(guest.stage);
